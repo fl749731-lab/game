@@ -128,6 +128,7 @@ int main() {
     Engine::Renderer::Init();
     Engine::Skybox::Init();
     Engine::ParticleSystem::Init();
+    Engine::AudioEngine::Init();
 
     // 天空盒 (夜晚配色)
     Engine::Skybox::SetTopColor(0.02f, 0.02f, 0.12f);
@@ -343,6 +344,15 @@ int main() {
                                      {0,1,0}, pls[i].Color * 0.5f, 16);
         }
 
+        // 碰撞包围盒可视化 (绿色 AABB)
+        world.ForEach<Engine::TransformComponent>([&](Engine::Entity e, Engine::TransformComponent& tr) {
+            auto* rc = world.GetComponent<Engine::RenderComponent>(e);
+            if (!rc || rc->MeshType == "plane") return;
+            glm::vec3 mn(tr.X - tr.ScaleX*0.5f, tr.Y - tr.ScaleY*0.5f, tr.Z - tr.ScaleZ*0.5f);
+            glm::vec3 mx(tr.X + tr.ScaleX*0.5f, tr.Y + tr.ScaleY*0.5f, tr.Z + tr.ScaleZ*0.5f);
+            Engine::DebugDraw::AABB(mn, mx, {0.2f, 0.8f, 0.2f});
+        });
+
         // ═════════════════════════════════════════════════════
         //  ★ 一行渲染：SceneRenderer 处理一切
         // ═════════════════════════════════════════════════════
@@ -389,6 +399,7 @@ int main() {
     Engine::DebugUI::Shutdown();
     Engine::DebugDraw::Shutdown();
     Engine::ParticleSystem::Shutdown();
+    Engine::AudioEngine::Shutdown();
     Engine::Skybox::Shutdown();
     Engine::SceneRenderer::Shutdown();   // 内部清理 FBO + Shader + Bloom + PostProcess
     Engine::SceneManager::Clear();
