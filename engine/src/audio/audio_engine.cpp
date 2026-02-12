@@ -133,9 +133,23 @@ void AudioEngine::SetMusicVolume(f32 volume) {
 void AudioEngine::PlaySFX(const std::string& filepath, f32 volume) {
     if (!s_Initialized) return;
 
-    // 简单方式：使用 ma_engine_play_sound (fire-and-forget)
-    ma_engine_play_sound(s_Engine, filepath.c_str(), nullptr);
-    // 注意：ma_engine_play_sound 会自动管理生命周期
+    // 使用 ma_sound 创建并设置音量
+    auto* sound = new ma_sound();
+    if (ma_sound_init_from_file(s_Engine, filepath.c_str(),
+                                MA_SOUND_FLAG_DECODE, nullptr, nullptr,
+                                sound) != MA_SUCCESS) {
+        LOG_WARN("[AudioEngine] 音效加载失败: %s", filepath.c_str());
+        delete sound;
+        return;
+    }
+    ma_sound_set_volume(sound, volume * s_MasterVolume);
+    ma_sound_start(sound);
+
+    // 注册到活跃列表以便后续清理
+    {
+        std::lock_guard<std::mutex> lock(s_SFXMutex);
+        s_ActiveSFX.push_back({sound});
+    }
 }
 
 // ── 全局音量 ────────────────────────────────────────────────

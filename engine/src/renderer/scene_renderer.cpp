@@ -239,6 +239,7 @@ void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
                           dirLight.Color.y * dirLight.Intensity, dirLight.Color.z * dirLight.Intensity);
     glm::vec3 cp = camera.GetPosition();
     s_LitShader->SetVec3("uViewPos", cp.x, cp.y, cp.z);
+    s_LitShader->SetFloat("uAmbientStrength", 0.15f);
 
     // 阴影 Uniform
     s_LitShader->SetMat4("uLightSpaceMat", glm::value_ptr(ShadowMap::GetLightSpaceMatrix()));

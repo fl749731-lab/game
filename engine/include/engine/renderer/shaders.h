@@ -88,12 +88,15 @@ uniform int uShadowEnabled;
 uniform sampler2D uNormalMap;
 uniform int uUseNormalMap;
 
-float CalcShadow(vec4 fragPosLightSpace) {
+uniform float uAmbientStrength;  // 环境光系数（默认 0.15）
+
+float CalcShadow(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
     vec3 proj = fragPosLightSpace.xyz / fragPosLightSpace.w;
     proj = proj * 0.5 + 0.5;
     if (proj.z > 1.0) return 0.0;
 
-    float bias = 0.002;
+    // 动态 slope-scale bias
+    float bias = max(0.005 * (1.0 - dot(normal, lightDir)), 0.001);
     float shadow = 0.0;
     vec2 texelSize = 1.0 / textureSize(uShadowMap, 0);
 
@@ -119,18 +122,18 @@ void main() {
     vec3 base = uMatDiffuse;
     if (uUseTex == 1) base = texture(uTex, vTexCoord).rgb;
 
-    // ── 阴影计算 ─────────────────────────────────────────
+    // ── 阴影计算 ───────────────────────────────
+    vec3 L = normalize(-uDirLightDir);
     float shadow = 0.0;
     if (uShadowEnabled == 1) {
-        shadow = CalcShadow(vFragPosLightSpace);
+        shadow = CalcShadow(vFragPosLightSpace, N, L);
     }
 
-    // ── 方向光 ────────────────────────────────────────────
-    vec3 L = normalize(-uDirLightDir);
+    // ── 方向光 ────────────────────────────────
     float diff = max(dot(N, L), 0.0);
     vec3 H = normalize(L + V);
     float spec = pow(max(dot(N, H), 0.0), uShininess);
-    vec3 result = (0.15 * base + (1.0 - shadow) * (diff * base + spec * uMatSpecular)) * uDirLightColor * 0.6;
+    vec3 result = (uAmbientStrength * base + (1.0 - shadow) * (diff * base + spec * uMatSpecular)) * uDirLightColor;
 
     // ── 点光 ──────────────────────────────────────────────
     for (int i = 0; i < uPLCount; i++) {
