@@ -292,6 +292,12 @@ typedef void   (APIENTRY *PFNGLUNIFORM4FPROC)(GLint, GLfloat, GLfloat, GLfloat, 
 typedef void   (APIENTRY *PFNGLUNIFORMMATRIX4FVPROC)(GLint, GLsizei, GLboolean, const GLfloat*);
 typedef void   (APIENTRY *PFNGLUNIFORMMATRIX3FVPROC)(GLint, GLsizei, GLboolean, const GLfloat*);
 
+/* Pixel store (GL 1.0+) */
+typedef void   (APIENTRY *PFNGLPIXELSTOREIPROC)(GLenum, GLint);
+typedef void   (APIENTRY *PFNGLSCISSORPROC)(GLint, GLint, GLsizei, GLsizei);
+typedef void   (APIENTRY *PFNGLBLENDFUNCSEPARATEPROC)(GLenum, GLenum, GLenum, GLenum);
+typedef void   (APIENTRY *PFNGLBLENDEQUATIONPROC)(GLenum);
+
 /* Textures extended (GL 1.3+) */
 typedef void   (APIENTRY *PFNGLACTIVETEXTUREPROC)(GLenum);
 typedef void   (APIENTRY *PFNGLGENERATEMIPMAPROC)(GLenum);
@@ -379,6 +385,11 @@ extern PFNGLUNIFORM4FPROC              glad_glUniform4f;
 extern PFNGLUNIFORMMATRIX4FVPROC       glad_glUniformMatrix4fv;
 extern PFNGLUNIFORMMATRIX3FVPROC       glad_glUniformMatrix3fv;
 
+extern PFNGLPIXELSTOREIPROC            glad_glPixelStorei;
+extern PFNGLSCISSORPROC                glad_glScissor;
+extern PFNGLBLENDFUNCSEPARATEPROC      glad_glBlendFuncSeparate;
+extern PFNGLBLENDEQUATIONPROC          glad_glBlendEquation;
+
 extern PFNGLACTIVETEXTUREPROC          glad_glActiveTexture;
 extern PFNGLGENERATEMIPMAPROC          glad_glGenerateMipmap;
 
@@ -453,6 +464,10 @@ extern PFNGLDEBUGMESSAGECALLBACKPROC   glad_glDebugMessageCallback;
 #define glUniform4f             glad_glUniform4f
 #define glUniformMatrix4fv      glad_glUniformMatrix4fv
 #define glUniformMatrix3fv      glad_glUniformMatrix3fv
+#define glPixelStorei           glad_glPixelStorei
+#define glScissor               glad_glScissor
+#define glBlendFuncSeparate     glad_glBlendFuncSeparate
+#define glBlendEquation         glad_glBlendEquation
 #define glActiveTexture         glad_glActiveTexture
 #define glGenerateMipmap        glad_glGenerateMipmap
 #define glGenFramebuffers       glad_glGenFramebuffers

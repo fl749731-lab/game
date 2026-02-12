@@ -31,6 +31,16 @@ add_subdirectory(third_party/glm)
 
 # stb (Header-only, 在引擎内部实现)
 
+# ImGui (场景编辑器 UI)
+file(GLOB IMGUI_SOURCES "${CMAKE_SOURCE_DIR}/third_party/imgui/*.cpp")
+add_library(imgui STATIC ${IMGUI_SOURCES})
+target_include_directories(imgui PUBLIC
+    "${CMAKE_SOURCE_DIR}/third_party/imgui"
+)
+target_link_libraries(imgui PUBLIC glfw glad)
+
+# cgltf (Header-only glTF 解析器, 在引擎内部实现)
+
 # ── 引擎库 ──────────────────────────────────────────────────
 
 add_subdirectory(engine)

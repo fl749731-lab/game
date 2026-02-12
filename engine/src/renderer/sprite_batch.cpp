@@ -1,4 +1,5 @@
 #include "engine/renderer/sprite_batch.h"
+#include "engine/renderer/font.h"
 #include "engine/core/log.h"
 
 #include <glad/glad.h>
@@ -292,6 +293,78 @@ void SpriteBatch::DrawRect(const glm::vec2& position,
                            const glm::vec4& color,
                            f32 rotation) {
     Draw(nullptr, position, size, rotation, color);
+}
+
+void SpriteBatch::DrawText(Font& font,
+                           const std::string& text,
+                           const glm::vec2& position,
+                           f32 scale,
+                           const glm::vec4& color) {
+    if (!font.IsValid()) return;
+
+    // 查找或分配字体纹理槽位
+    u32 fontTexID = font.GetTextureID();
+    f32 texIndex = 0.0f;
+    for (u32 i = 1; i < s_TextureSlotIndex; i++) {
+        if (s_TextureSlots[i] == fontTexID) {
+            texIndex = (f32)i;
+            break;
+        }
+    }
+    if (texIndex == 0.0f && fontTexID != 0) {
+        if (s_TextureSlotIndex >= MAX_TEXTURE_SLOTS) Flush();
+        s_TextureSlots[s_TextureSlotIndex] = fontTexID;
+        texIndex = (f32)s_TextureSlotIndex;
+        s_TextureSlotIndex++;
+    }
+
+    f32 cursorX = position.x;
+    f32 cursorY = position.y;
+
+    for (char c : text) {
+        if (c == '\n') {
+            cursorX = position.x;
+            cursorY += font.GetLineHeight() * scale;
+            continue;
+        }
+
+        if (s_QuadCount >= MAX_QUADS) Flush();
+
+        const auto& g = font.GetGlyph(c);
+
+        f32 x = cursorX + g.OffsetX * scale;
+        f32 y = cursorY + g.OffsetY * scale + font.GetLineHeight() * scale;
+        f32 w = g.Width * scale;
+        f32 h = g.Height * scale;
+
+        // 4 个顶点 (左上、右上、右下、左下)
+        s_VertexPtr->Position = {x, y};
+        s_VertexPtr->TexCoord = {g.U0, g.V0};
+        s_VertexPtr->Color = color;
+        s_VertexPtr->TexIndex = texIndex;
+        s_VertexPtr++;
+
+        s_VertexPtr->Position = {x + w, y};
+        s_VertexPtr->TexCoord = {g.U1, g.V0};
+        s_VertexPtr->Color = color;
+        s_VertexPtr->TexIndex = texIndex;
+        s_VertexPtr++;
+
+        s_VertexPtr->Position = {x + w, y + h};
+        s_VertexPtr->TexCoord = {g.U1, g.V1};
+        s_VertexPtr->Color = color;
+        s_VertexPtr->TexIndex = texIndex;
+        s_VertexPtr++;
+
+        s_VertexPtr->Position = {x, y + h};
+        s_VertexPtr->TexCoord = {g.U0, g.V1};
+        s_VertexPtr->Color = color;
+        s_VertexPtr->TexIndex = texIndex;
+        s_VertexPtr++;
+
+        s_QuadCount++;
+        cursorX += g.Advance * scale;
+    }
 }
 
 // ── 统计 ────────────────────────────────────────────────────

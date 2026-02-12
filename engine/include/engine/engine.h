@@ -37,11 +37,16 @@
 #include "engine/renderer/frustum.h"
 #include "engine/renderer/screen_quad.h"
 #include "engine/renderer/sprite_batch.h"
+#include "engine/renderer/font.h"
+#include "engine/renderer/gltf_loader.h"
 
 // Debug
 #include "engine/debug/debug_draw.h"
 #include "engine/debug/debug_ui.h"
 #include "engine/debug/profiler.h"
+
+// Editor
+#include "engine/editor/editor.h"
 
 // Physics
 #include "engine/physics/collision.h"

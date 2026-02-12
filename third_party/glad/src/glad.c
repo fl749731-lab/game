@@ -81,6 +81,11 @@ PFNGLCHECKFRAMEBUFFERSTATUSPROC glad_glCheckFramebufferStatus = 0;
 PFNGLDRAWBUFFERSPROC            glad_glDrawBuffers = 0;
 PFNGLTEXSUBIMAGE2DPROC          glad_glTexSubImage2D = 0;
 
+PFNGLPIXELSTOREIPROC            glad_glPixelStorei = 0;
+PFNGLSCISSORPROC                glad_glScissor = 0;
+PFNGLBLENDFUNCSEPARATEPROC     glad_glBlendFuncSeparate = 0;
+PFNGLBLENDEQUATIONPROC         glad_glBlendEquation = 0;
+
 PFNGLDEBUGMESSAGECALLBACKPROC   glad_glDebugMessageCallback = 0;
 
 /* ── 加载实现 ──────────────────────────────────────────────── */
@@ -159,6 +164,10 @@ int gladLoadGL(GLADloadproc load) {
     GLAD_LOAD(glad_glUniformMatrix4fv,      "glUniformMatrix4fv");
     GLAD_LOAD(glad_glUniformMatrix3fv,      "glUniformMatrix3fv");
 
+    GLAD_LOAD(glad_glPixelStorei,           "glPixelStorei");
+    GLAD_LOAD(glad_glScissor,               "glScissor");
+    GLAD_LOAD(glad_glBlendFuncSeparate,     "glBlendFuncSeparate");
+    GLAD_LOAD(glad_glBlendEquation,         "glBlendEquation");
     GLAD_LOAD(glad_glActiveTexture,         "glActiveTexture");
     GLAD_LOAD(glad_glGenerateMipmap,        "glGenerateMipmap");
 

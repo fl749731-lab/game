@@ -29,6 +29,7 @@ target_include_directories(Engine
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${CMAKE_SOURCE_DIR}/third_party/stb"
         "${CMAKE_SOURCE_DIR}/third_party/miniaudio"
+        "${CMAKE_SOURCE_DIR}/third_party/cgltf"
         $<$<BOOL:${Python3_FOUND}>:${Python3_INCLUDE_DIRS}>
 )
 
@@ -36,6 +37,7 @@ target_link_libraries(Engine
     PUBLIC
         glfw
         glad
+        imgui
         glm::glm
     PRIVATE
         opengl32  # Windows OpenGL

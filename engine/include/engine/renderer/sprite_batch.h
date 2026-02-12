@@ -5,8 +5,11 @@
 #include "engine/renderer/shader.h"
 
 #include <glm/glm.hpp>
+#include <string>
 
 namespace Engine {
+
+class Font; // 前向声明
 
 // ── 2D 精灵批渲染器 ────────────────────────────────────────
 // 批量绘制 2D 四边形，使用正交投影
@@ -35,6 +38,13 @@ public:
                          const glm::vec2& size,
                          const glm::vec4& color,
                          f32 rotation = 0.0f);
+
+    /// 绘制文字
+    static void DrawText(Font& font,
+                         const std::string& text,
+                         const glm::vec2& position,
+                         f32 scale = 1.0f,
+                         const glm::vec4& color = glm::vec4(1.0f));
 
     /// 结束当前帧 (Flush 到 GPU)
     static void End();
