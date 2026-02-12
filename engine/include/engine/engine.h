@@ -32,6 +32,7 @@
 #include "engine/renderer/scene_renderer.h"
 #include "engine/renderer/shaders.h"
 #include "engine/renderer/fps_camera_controller.h"
+#include "engine/renderer/shadow_map.h"
 
 // Debug
 #include "engine/debug/debug_draw.h"

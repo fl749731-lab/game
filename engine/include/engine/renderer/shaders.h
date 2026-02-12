@@ -16,15 +16,18 @@ layout(location = 2) in vec2 aTexCoord;
 out vec3 vFragPos;
 out vec3 vNormal;
 out vec2 vTexCoord;
+out vec4 vFragPosLightSpace;
 
 uniform mat4 uVP;
 uniform mat4 uModel;
+uniform mat4 uLightSpaceMat;
 
 void main() {
     vec4 wp = uModel * vec4(aPos, 1.0);
     vFragPos = wp.xyz;
     vNormal = mat3(transpose(inverse(uModel))) * aNormal;
     vTexCoord = aTexCoord;
+    vFragPosLightSpace = uLightSpaceMat * wp;
     gl_Position = uVP * wp;
 }
 )";
@@ -34,6 +37,7 @@ inline const char* LitFragment = R"(
 in vec3 vFragPos;
 in vec3 vNormal;
 in vec2 vTexCoord;
+in vec4 vFragPosLightSpace;
 out vec4 FragColor;
 
 uniform vec3 uMatDiffuse;
@@ -64,18 +68,46 @@ uniform vec3 uViewPos;
 uniform int uUseTex;
 uniform sampler2D uTex;
 
+uniform sampler2D uShadowMap;
+uniform int uShadowEnabled;
+
+float CalcShadow(vec4 fragPosLightSpace) {
+    vec3 proj = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    proj = proj * 0.5 + 0.5;
+    if (proj.z > 1.0) return 0.0;
+
+    float bias = 0.002;
+    float shadow = 0.0;
+    vec2 texelSize = 1.0 / textureSize(uShadowMap, 0);
+
+    // PCF 3x3
+    for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+            float d = texture(uShadowMap, proj.xy + vec2(x,y) * texelSize).r;
+            shadow += (proj.z - bias > d) ? 1.0 : 0.0;
+        }
+    }
+    return shadow / 9.0;
+}
+
 void main() {
     vec3 N = normalize(vNormal);
     vec3 V = normalize(uViewPos - vFragPos);
     vec3 base = uMatDiffuse;
     if (uUseTex == 1) base = texture(uTex, vTexCoord).rgb;
 
+    // ── 阴影计算 ─────────────────────────────────────────
+    float shadow = 0.0;
+    if (uShadowEnabled == 1) {
+        shadow = CalcShadow(vFragPosLightSpace);
+    }
+
     // ── 方向光 ────────────────────────────────────────────
     vec3 L = normalize(-uDirLightDir);
     float diff = max(dot(N, L), 0.0);
     vec3 H = normalize(L + V);
     float spec = pow(max(dot(N, H), 0.0), uShininess);
-    vec3 result = (0.15 * base + diff * base + spec * uMatSpecular) * uDirLightColor * 0.6;
+    vec3 result = (0.15 * base + (1.0 - shadow) * (diff * base + spec * uMatSpecular)) * uDirLightColor * 0.6;
 
     // ── 点光 ──────────────────────────────────────────────
     for (int i = 0; i < uPLCount; i++) {

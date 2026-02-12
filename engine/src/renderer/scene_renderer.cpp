@@ -6,6 +6,7 @@
 #include "engine/renderer/skybox.h"
 #include "engine/renderer/particle.h"
 #include "engine/renderer/texture.h"
+#include "engine/renderer/shadow_map.h"
 #include "engine/core/resource_manager.h"
 #include "engine/core/log.h"
 #include "engine/core/time.h"
@@ -124,6 +125,9 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
     PostProcess::SetExposure(s_Exposure);
     Bloom::Init(config.Width, config.Height);
 
+    // 阴影
+    ShadowMap::Init();
+
     LOG_INFO("[SceneRenderer] 初始化完成 (%ux%u)", s_Width, s_Height);
 }
 
@@ -133,6 +137,7 @@ void SceneRenderer::Shutdown() {
     s_LitShader.reset();
     s_EmissiveShader.reset();
     Bloom::Shutdown();
+    ShadowMap::Shutdown();
     PostProcess::Shutdown();
     LOG_DEBUG("[SceneRenderer] 已清理");
 }
@@ -149,8 +154,33 @@ void SceneRenderer::Resize(u32 width, u32 height) {
 void SceneRenderer::RenderScene(Scene& scene, PerspectiveCamera& camera) {
     Profiler::BeginTimer("Render");
 
+    // ── Pass 0: 阴影深度 ──────────────────────────────────
+    {
+        auto& dirLight = scene.GetDirLight();
+        ShadowMap::BeginShadowPass(dirLight);
+        auto depthShader = ShadowMap::GetDepthShader();
+        auto& world = scene.GetWorld();
+
+        for (auto e : world.GetEntities()) {
+            auto* tr = world.GetComponent<TransformComponent>(e);
+            auto* rc = world.GetComponent<RenderComponent>(e);
+            if (!tr || !rc) continue;
+
+            glm::mat4 model = glm::translate(glm::mat4(1.0f), {tr->X, tr->Y, tr->Z});
+            model = glm::rotate(model, glm::radians(tr->RotY), {0, 1, 0});
+            model = glm::rotate(model, glm::radians(tr->RotX), {1, 0, 0});
+            model = glm::scale(model, {tr->ScaleX, tr->ScaleY, tr->ScaleZ});
+
+            depthShader->SetMat4("uModel", glm::value_ptr(model));
+            auto* mesh = ResourceManager::GetMesh(rc->MeshType);
+            if (mesh) mesh->Draw();
+        }
+        ShadowMap::EndShadowPass();
+    }
+
     // ── Pass 1: 离屏 HDR FBO ────────────────────────────────
     s_HDR_FBO->Bind();
+    Renderer::SetViewport(0, 0, s_Width, s_Height);  // 恢复 viewport（Shadow Pass 改了）
     Renderer::SetClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     Renderer::Clear();
 
@@ -204,6 +234,13 @@ void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
                           dirLight.Color.y * dirLight.Intensity, dirLight.Color.z * dirLight.Intensity);
     glm::vec3 cp = camera.GetPosition();
     s_LitShader->SetVec3("uViewPos", cp.x, cp.y, cp.z);
+
+    // 阴影 Uniform
+    s_LitShader->SetMat4("uLightSpaceMat", glm::value_ptr(ShadowMap::GetLightSpaceMatrix()));
+    s_LitShader->SetInt("uShadowEnabled", 1);
+    s_LitShader->SetInt("uShadowMap", 5);  // 绽定到纹理单元 5
+    glActiveTexture(GL_TEXTURE0 + 5);
+    glBindTexture(GL_TEXTURE_2D, ShadowMap::GetShadowTextureID());
 
     // 点光源 Uniform
     s_LitShader->SetInt("uPLCount", (int)pls.size());
