@@ -63,8 +63,19 @@ f64 Profiler::GetAverageMs(const std::string& name, u32 frames) {
     auto& hist = it->second;
     u32 count = std::min((u32)hist.size(), frames);
     f64 sum = 0;
-    for (u32 i = (u32)hist.size() - count; i < (u32)hist.size(); i++)
-        sum += hist[i];
+
+    if (hist.size() < HISTORY_SIZE) {
+        // 缓冲区未满：尾部即最新数据
+        for (u32 i = (u32)hist.size() - count; i < (u32)hist.size(); i++)
+            sum += hist[i];
+    } else {
+        // 缓冲区已满：从写入位置倒序读取最新 count 个
+        u32 writePos = s_HistoryIndex[name];
+        for (u32 i = 0; i < count; i++) {
+            u32 idx = (writePos - 1 - i + HISTORY_SIZE) % HISTORY_SIZE;
+            sum += hist[idx];
+        }
+    }
     return sum / count;
 }
 

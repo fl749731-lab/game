@@ -168,18 +168,17 @@ void DebugDraw::Flush(const f32* viewProjectionMatrix) {
 
     // 上传顶点数据
     glBindBuffer(GL_ARRAY_BUFFER, s_VBO);
-    size_t uploadSize = s_Vertices.size() * sizeof(LineVertex);
-    if (uploadSize > MAX_LINES * 2 * sizeof(LineVertex)) {
-        uploadSize = MAX_LINES * 2 * sizeof(LineVertex);
-    }
-    glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)uploadSize, s_Vertices.data());
+    size_t vertCount = s_Vertices.size();
+    size_t maxVerts = MAX_LINES * 2;
+    if (vertCount > maxVerts) vertCount = maxVerts;
+    glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(vertCount * sizeof(LineVertex)), s_Vertices.data());
 
     s_Shader->Bind();
     s_Shader->SetMat4("uVP", viewProjectionMatrix);
 
     glLineWidth(s_LineWidth);
     glBindVertexArray(s_VAO);
-    glDrawArrays(GL_LINES, 0, (GLsizei)s_Vertices.size());
+    glDrawArrays(GL_LINES, 0, (GLsizei)vertCount);
     glBindVertexArray(0);
     glLineWidth(1.0f);
 

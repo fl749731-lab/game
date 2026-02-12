@@ -224,19 +224,21 @@ struct LifetimeComponent : public Component {
 class LifetimeSystem : public System {
 public:
     void Update(ECSWorld& world, f32 dt) override {
-        std::vector<Entity> toDestroy;
+        m_ToDestroy.clear(); // clear 保留容量，不重新分配
         for (auto e : world.GetEntities()) {
             auto* lc = world.GetComponent<LifetimeComponent>(e);
             if (lc) {
                 lc->TimeRemaining -= dt;
-                if (lc->TimeRemaining <= 0) toDestroy.push_back(e);
+                if (lc->TimeRemaining <= 0) m_ToDestroy.push_back(e);
             }
         }
-        for (auto e : toDestroy) {
+        for (auto e : m_ToDestroy) {
             world.DestroyEntity(e);
         }
     }
     const char* GetName() const override { return "LifetimeSystem"; }
+private:
+    std::vector<Entity> m_ToDestroy;
 };
 
 } // namespace Engine

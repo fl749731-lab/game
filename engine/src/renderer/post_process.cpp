@@ -6,8 +6,7 @@
 
 namespace Engine {
 
-u32 PostProcess::s_QuadVAO = 0;
-u32 PostProcess::s_QuadVBO = 0;
+// QuadVAO/VBO 已迁移至 ScreenQuad，此处不再需要
 Ref<Shader> PostProcess::s_Shader = nullptr;
 f32 PostProcess::s_Exposure = 1.0f;
 f32 PostProcess::s_Gamma = 2.2f;

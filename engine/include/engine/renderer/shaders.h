@@ -90,6 +90,11 @@ uniform int uUseNormalMap;
 
 uniform float uAmbientStrength;  // 环境光系数（默认 0.15）
 
+// 自发光支持
+uniform int uIsEmissive;
+uniform vec3 uEmissiveColor;
+uniform float uEmissiveIntensity;
+
 float CalcShadow(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
     vec3 proj = fragPosLightSpace.xyz / fragPosLightSpace.w;
     proj = proj * 0.5 + 0.5;
@@ -153,7 +158,7 @@ void main() {
 
         // 内外锥衰减
         float theta = dot(sL, normalize(-uSLDir[i]));
-        float epsilon = uSLInnerCut[i] - uSLOuterCut[i];
+        float epsilon = max(uSLInnerCut[i] - uSLOuterCut[i], 0.001);
         float spotAtt = clamp((theta - uSLOuterCut[i]) / epsilon, 0.0, 1.0);
 
         // 距离衰减
@@ -164,6 +169,11 @@ void main() {
         float sSpec = pow(max(dot(N, sH), 0.0), uShininess);
 
         result += (sDiff * base + sSpec * uMatSpecular) * uSLColor[i] * uSLIntensity[i] * att * spotAtt;
+    }
+
+    // ── 自发光叠加（HDR! 允许 >1.0 以激活 Bloom）─────────
+    if (uIsEmissive == 1) {
+        result += uEmissiveColor * uEmissiveIntensity;
     }
 
     FragColor = vec4(result, 1.0);

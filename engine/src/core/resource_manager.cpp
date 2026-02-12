@@ -73,10 +73,11 @@ Ref<Texture2D> ResourceManager::LoadTexture(const std::string& name,
     if (tex->IsValid()) {
         s_Textures[name] = tex;
         LOG_INFO("[资源] Texture '%s' 已加载并缓存", name.c_str());
+        return tex;
     } else {
         LOG_ERROR("[资源] Texture '%s' 加载失败: %s", name.c_str(), filepath.c_str());
+        return nullptr;
     }
-    return tex;
 }
 
 Ref<Texture2D> ResourceManager::GetTexture(const std::string& name) {

@@ -144,6 +144,10 @@ void Editor::DrawInspector(ECSWorld& world, Entity entity) {
             ImGui::DragFloat("Metallic", &mat->Metallic, 0.01f, 0.0f, 1.0f);
             ImGui::Checkbox("Emissive", &mat->Emissive);
             if (mat->Emissive) {
+                float emCol[3] = {mat->EmissiveR, mat->EmissiveG, mat->EmissiveB};
+                if (ImGui::ColorEdit3("Emissive Color", emCol)) {
+                    mat->EmissiveR = emCol[0]; mat->EmissiveG = emCol[1]; mat->EmissiveB = emCol[2];
+                }
                 ImGui::DragFloat("Emissive Intensity", &mat->EmissiveIntensity, 0.1f, 0.0f, 50.0f);
             }
         }

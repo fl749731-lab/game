@@ -262,6 +262,11 @@ void DebugUI::Flush(u32 screenWidth, u32 screenHeight) {
     const f32 uvH = (f32)CHAR_H / (f32)(ROWS * CHAR_H);  // 1 字符在图集中的 UV 高
 
     // 按颜色批处理
+    // 保存当前 GL 状态
+    GLint prevDepthTest, prevBlend;
+    glGetIntegerv(GL_DEPTH_TEST, &prevDepthTest);
+    glGetIntegerv(GL_BLEND, &prevBlend);
+
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -329,7 +334,10 @@ void DebugUI::Flush(u32 screenWidth, u32 screenHeight) {
     }
 
     glBindVertexArray(0);
-    glEnable(GL_DEPTH_TEST);
+
+    // 恢复 GL 状态
+    if (prevDepthTest) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    if (!prevBlend) glDisable(GL_BLEND);
 
     s_TextQueue.clear();
 }

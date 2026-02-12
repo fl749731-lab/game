@@ -101,6 +101,7 @@ std::string PythonEngine::CallFunction(const std::string& module,
     PyObject* pFunc = PyObject_GetAttrString(pModule, func.c_str());
     if (!pFunc || !PyCallable_Check(pFunc)) {
         PyErr_Print();
+        Py_XDECREF(pFunc);
         Py_DECREF(pModule);
         s_LastError = "找不到函数: " + module + "." + func;
         LOG_ERROR("[AI] %s", s_LastError.c_str());
@@ -421,12 +422,14 @@ AIAction AIManager::ParseAction(const std::string& result) {
 
     // [2] 移动速度
     if (parts.size() > 2 && !parts[2].empty()) {
-        action.MoveSpeed = std::stof(parts[2]);
+        try { action.MoveSpeed = std::stof(parts[2]); }
+        catch (...) { LOG_WARN("[AI] ParseAction: 无效速度 '%s'", parts[2].c_str()); }
     }
 
     // [3] 目标实体 ID
     if (parts.size() > 3 && !parts[3].empty()) {
-        action.TargetEntityID = (u32)std::stoul(parts[3]);
+        try { action.TargetEntityID = (u32)std::stoul(parts[3]); }
+        catch (...) { LOG_WARN("[AI] ParseAction: 无效目标ID '%s'", parts[3].c_str()); }
     }
 
     // [4] 自定义动作

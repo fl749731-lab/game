@@ -12,8 +12,7 @@ u32 Bloom::s_PingFBO = 0;
 u32 Bloom::s_PingTexture = 0;
 u32 Bloom::s_PongFBO = 0;
 u32 Bloom::s_PongTexture = 0;
-u32 Bloom::s_QuadVAO = 0;
-u32 Bloom::s_QuadVBO = 0;
+// QuadVAO/VBO 已迁移至 ScreenQuad，此处不再需要
 Ref<Shader> Bloom::s_BrightShader = nullptr;
 Ref<Shader> Bloom::s_BlurShader = nullptr;
 u32 Bloom::s_Width = 0;

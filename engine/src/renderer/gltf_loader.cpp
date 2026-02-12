@@ -117,8 +117,12 @@ std::vector<GltfMesh> GltfLoader::Load(const std::string& filepath) {
                     mat.Roughness = pbr.roughness_factor;
                 }
 
-                if (gmat.emissive_strength.emissive_strength > 0) {
+                if (gmat.has_emissive_strength) {
                     mat.Emissive = gmat.emissive_strength.emissive_strength;
+                } else {
+                    // 回退到标准 emissive_factor 亮度
+                    f32 eFactor = gmat.emissive_factor[0] + gmat.emissive_factor[1] + gmat.emissive_factor[2];
+                    if (eFactor > 0.001f) mat.Emissive = eFactor / 3.0f;
                 }
             }
 

@@ -190,7 +190,7 @@ void ParticleSystem::Update(f32 dt) {
         p.Position += p.Velocity * dt;
 
         // 颜色插值
-        f32 t = 1.0f - p.Life / p.MaxLife;
+        f32 t = (p.MaxLife > 0.001f) ? (1.0f - p.Life / p.MaxLife) : 1.0f;
         p.Color = glm::mix(p.ColorStart, p.ColorEnd, t);
 
         s_AliveCount++;
@@ -210,7 +210,7 @@ void ParticleSystem::Draw(const f32* viewProjectionMatrix,
         id.Position = p.Position;
         id.Size = p.Size;
         id.Color = p.Color;
-        id.Alpha = p.Life / p.MaxLife;
+        id.Alpha = (p.MaxLife > 0.001f) ? (p.Life / p.MaxLife) : 0.0f;
         s_InstanceBuffer.push_back(id);
     }
 

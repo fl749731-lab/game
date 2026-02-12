@@ -250,7 +250,8 @@ void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
     glBindTexture(GL_TEXTURE_2D, ShadowMap::GetShadowTextureID());
 
     // 点光源 Uniform
-    s_LitShader->SetInt("uPLCount", (int)pls.size());
+    int plCount = std::min((int)pls.size(), (int)MAX_POINT_LIGHTS);
+    s_LitShader->SetInt("uPLCount", plCount);
     for (int i = 0; i < (int)pls.size() && i < MAX_POINT_LIGHTS; i++) {
         s_LitShader->SetVec3(s_PLUniforms[i].Pos, pls[i].Position.x, pls[i].Position.y, pls[i].Position.z);
         s_LitShader->SetVec3(s_PLUniforms[i].Color, pls[i].Color.x, pls[i].Color.y, pls[i].Color.z);
@@ -262,7 +263,8 @@ void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
 
     // 聚光灯 Uniform
     auto& sls = scene.GetSpotLights();
-    s_LitShader->SetInt("uSLCount", (int)sls.size());
+    int slCount = std::min((int)sls.size(), (int)MAX_SPOT_LIGHTS);
+    s_LitShader->SetInt("uSLCount", slCount);
     for (int i = 0; i < (int)sls.size() && i < MAX_SPOT_LIGHTS; i++) {
         s_LitShader->SetVec3(s_SLUniforms[i].Pos, sls[i].Position.x, sls[i].Position.y, sls[i].Position.z);
         s_LitShader->SetVec3(s_SLUniforms[i].Dir, sls[i].Direction.x, sls[i].Direction.y, sls[i].Direction.z);
@@ -344,12 +346,22 @@ void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
             } else {
                 s_LitShader->SetInt("uUseNormalMap", 0);
             }
+
+            // 自发光
+            if (mat->Emissive) {
+                s_LitShader->SetInt("uIsEmissive", 1);
+                s_LitShader->SetVec3("uEmissiveColor", mat->EmissiveR, mat->EmissiveG, mat->EmissiveB);
+                s_LitShader->SetFloat("uEmissiveIntensity", mat->EmissiveIntensity);
+            } else {
+                s_LitShader->SetInt("uIsEmissive", 0);
+            }
         } else {
             // 旧兼容路径
             s_LitShader->SetVec3("uMatDiffuse", rc->ColorR, rc->ColorG, rc->ColorB);
             s_LitShader->SetVec3("uMatSpecular", 0.8f, 0.8f, 0.8f);
             s_LitShader->SetFloat("uShininess", rc->Shininess);
             s_LitShader->SetInt("uUseNormalMap", 0);
+            s_LitShader->SetInt("uIsEmissive", 0);
 
             if (rc->MeshType == "plane") {
                 s_LitShader->SetInt("uUseTex", 1);

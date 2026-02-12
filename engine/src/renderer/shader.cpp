@@ -9,6 +9,14 @@ Shader::Shader(const std::string& vertexSrc, const std::string& fragmentSrc) {
     u32 vertShader = CompileShader(GL_VERTEX_SHADER, vertexSrc);
     u32 fragShader = CompileShader(GL_FRAGMENT_SHADER, fragmentSrc);
 
+    if (vertShader == 0 || fragShader == 0) {
+        // 编译失败，清理并标记无效
+        if (vertShader) glDeleteShader(vertShader);
+        if (fragShader) glDeleteShader(fragShader);
+        m_Valid = false;
+        return;
+    }
+
     m_ID = glCreateProgram();
     glAttachShader(m_ID, vertShader);
     glAttachShader(m_ID, fragShader);
@@ -20,6 +28,8 @@ Shader::Shader(const std::string& vertexSrc, const std::string& fragmentSrc) {
         char infoLog[512];
         glGetProgramInfoLog(m_ID, 512, nullptr, infoLog);
         LOG_ERROR("Shader 程序链接失败: %s", infoLog);
+        glDeleteProgram(m_ID);
+        m_ID = 0;
         m_Valid = false;
     } else {
         LOG_DEBUG("Shader 程序 %u 链接成功", m_ID);
@@ -58,6 +68,8 @@ u32 Shader::CompileShader(u32 type, const std::string& source) {
         glGetShaderInfoLog(shader, 512, nullptr, infoLog);
         const char* typeStr = (type == GL_VERTEX_SHADER) ? "顶点" : "片段";
         LOG_ERROR("%s着色器编译失败: %s", typeStr, infoLog);
+        glDeleteShader(shader);
+        return 0;
     }
 
     return shader;

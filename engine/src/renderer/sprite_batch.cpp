@@ -202,6 +202,11 @@ void SpriteBatch::Flush() {
     s_Shader->Bind();
     s_Shader->SetMat4("uProjection", glm::value_ptr(s_Projection));
 
+    // 保存当前 GL 状态
+    GLint prevDepthTest, prevBlend;
+    glGetIntegerv(GL_DEPTH_TEST, &prevDepthTest);
+    glGetIntegerv(GL_BLEND, &prevBlend);
+
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -210,7 +215,9 @@ void SpriteBatch::Flush() {
     glDrawElements(GL_TRIANGLES, s_QuadCount * 6, GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
 
-    glEnable(GL_DEPTH_TEST);
+    // 恢复 GL 状态
+    if (prevDepthTest) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    if (!prevBlend) glDisable(GL_BLEND);
 
     s_DrawCalls++;
     StartBatch();
@@ -328,7 +335,15 @@ void SpriteBatch::DrawText(Font& font,
             continue;
         }
 
-        if (s_QuadCount >= MAX_QUADS) Flush();
+        if (s_QuadCount >= MAX_QUADS) {
+            Flush();
+            // Flush 重置了纹理槽，重新分配字体纹理
+            if (fontTexID != 0) {
+                s_TextureSlots[s_TextureSlotIndex] = fontTexID;
+                texIndex = (f32)s_TextureSlotIndex;
+                s_TextureSlotIndex++;
+            }
+        }
 
         const auto& g = font.GetGlyph(c);
 
