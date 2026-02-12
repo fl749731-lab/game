@@ -15,6 +15,8 @@ struct MeshVertex {
     glm::vec3 Position;
     glm::vec3 Normal;
     glm::vec2 TexCoord;
+    glm::vec3 Tangent  = {1, 0, 0};
+    glm::vec3 Bitangent = {0, 0, 1};
 };
 
 // ── 网格 ────────────────────────────────────────────────────

@@ -328,11 +328,21 @@ void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
             } else {
                 s_LitShader->SetInt("uUseTex", 0);
             }
+
+            // 法线贴图
+            if (!mat->NormalMapName.empty()) {
+                s_LitShader->SetInt("uUseNormalMap", 1);
+                auto nmap = ResourceManager::GetTexture(mat->NormalMapName);
+                if (nmap) { nmap->Bind(2); s_LitShader->SetInt("uNormalMap", 2); }
+            } else {
+                s_LitShader->SetInt("uUseNormalMap", 0);
+            }
         } else {
             // 旧兼容路径
             s_LitShader->SetVec3("uMatDiffuse", rc->ColorR, rc->ColorG, rc->ColorB);
             s_LitShader->SetVec3("uMatSpecular", 0.8f, 0.8f, 0.8f);
             s_LitShader->SetFloat("uShininess", rc->Shininess);
+            s_LitShader->SetInt("uUseNormalMap", 0);
 
             if (rc->MeshType == "plane") {
                 s_LitShader->SetInt("uUseTex", 1);

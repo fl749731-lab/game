@@ -15,6 +15,49 @@
 
 namespace Engine {
 
+// ── 辅助：计算切线/副切线 ────────────────────────────────────
+
+static void CalcTangents(std::vector<MeshVertex>& vertices,
+                         const std::vector<u32>& indices) {
+    // 先清零
+    for (auto& v : vertices) {
+        v.Tangent = {0, 0, 0};
+        v.Bitangent = {0, 0, 0};
+    }
+    // 遍历三角面，累加切线
+    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+        auto& v0 = vertices[indices[i]];
+        auto& v1 = vertices[indices[i+1]];
+        auto& v2 = vertices[indices[i+2]];
+
+        glm::vec3 e1 = v1.Position - v0.Position;
+        glm::vec3 e2 = v2.Position - v0.Position;
+        glm::vec2 dUV1 = v1.TexCoord - v0.TexCoord;
+        glm::vec2 dUV2 = v2.TexCoord - v0.TexCoord;
+
+        f32 det = dUV1.x * dUV2.y - dUV2.x * dUV1.y;
+        if (std::abs(det) < 1e-8f) continue;
+        f32 r = 1.0f / det;
+
+        glm::vec3 tangent   = (e1 * dUV2.y - e2 * dUV1.y) * r;
+        glm::vec3 bitangent = (e2 * dUV1.x - e1 * dUV2.x) * r;
+
+        v0.Tangent += tangent; v1.Tangent += tangent; v2.Tangent += tangent;
+        v0.Bitangent += bitangent; v1.Bitangent += bitangent; v2.Bitangent += bitangent;
+    }
+    // 归一化
+    for (auto& v : vertices) {
+        if (glm::length(v.Tangent) > 1e-6f)
+            v.Tangent = glm::normalize(v.Tangent);
+        else
+            v.Tangent = {1, 0, 0};
+        if (glm::length(v.Bitangent) > 1e-6f)
+            v.Bitangent = glm::normalize(v.Bitangent);
+        else
+            v.Bitangent = {0, 0, 1};
+    }
+}
+
 // ── 构造 / 析构 ─────────────────────────────────────────────
 
 Mesh::Mesh(const std::vector<MeshVertex>& vertices, const std::vector<u32>& indices)
@@ -42,6 +85,12 @@ Mesh::Mesh(const std::vector<MeshVertex>& vertices, const std::vector<u32>& indi
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(MeshVertex),
                           (void*)offsetof(MeshVertex, TexCoord));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(MeshVertex),
+                          (void*)offsetof(MeshVertex, Tangent));
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(MeshVertex),
+                          (void*)offsetof(MeshVertex, Bitangent));
 
     glBindVertexArray(0);
 }
@@ -161,6 +210,9 @@ Scope<Mesh> Mesh::LoadOBJ(const std::string& filepath) {
         }
     }
 
+    // 计算切线
+    CalcTangents(vertices, indices);
+
     LOG_INFO("OBJ 完成: %zu 顶点, %zu 索引", vertices.size(), indices.size());
     return std::make_unique<Mesh>(vertices, indices);
 }
@@ -171,10 +223,11 @@ Scope<Mesh> Mesh::CreateCube() {
     std::vector<MeshVertex> v;
     auto face = [&](glm::vec3 n, glm::vec3 u, glm::vec3 r) {
         glm::vec3 c = n * 0.5f;
-        v.push_back({c - u*0.5f - r*0.5f, n, {0,0}});
-        v.push_back({c - u*0.5f + r*0.5f, n, {1,0}});
-        v.push_back({c + u*0.5f + r*0.5f, n, {1,1}});
-        v.push_back({c + u*0.5f - r*0.5f, n, {0,1}});
+        // tangent = r 方向, bitangent = u 方向
+        v.push_back({c - u*0.5f - r*0.5f, n, {0,0}, r, u});
+        v.push_back({c - u*0.5f + r*0.5f, n, {1,0}, r, u});
+        v.push_back({c + u*0.5f + r*0.5f, n, {1,1}, r, u});
+        v.push_back({c + u*0.5f - r*0.5f, n, {0,1}, r, u});
     };
     face({ 0, 0, 1}, {0,1,0}, {1,0,0});
     face({ 0, 0,-1}, {0,1,0}, {-1,0,0});
@@ -193,11 +246,13 @@ Scope<Mesh> Mesh::CreateCube() {
 
 Scope<Mesh> Mesh::CreatePlane(f32 size, f32 uvScale) {
     f32 h = size * 0.5f;
+    glm::vec3 T = {1, 0, 0};
+    glm::vec3 B = {0, 0, 1};
     std::vector<MeshVertex> v = {
-        {{-h, 0, -h}, {0,1,0}, {0,       0}},
-        {{ h, 0, -h}, {0,1,0}, {uvScale, 0}},
-        {{ h, 0,  h}, {0,1,0}, {uvScale, uvScale}},
-        {{-h, 0,  h}, {0,1,0}, {0,       uvScale}},
+        {{-h, 0, -h}, {0,1,0}, {0,       0},       T, B},
+        {{ h, 0, -h}, {0,1,0}, {uvScale, 0},       T, B},
+        {{ h, 0,  h}, {0,1,0}, {uvScale, uvScale}, T, B},
+        {{-h, 0,  h}, {0,1,0}, {0,       uvScale}, T, B},
     };
     std::vector<u32> idx = {0,1,2, 2,3,0};
     return std::make_unique<Mesh>(v, idx);
@@ -216,11 +271,21 @@ Scope<Mesh> Mesh::CreateSphere(u32 stacks, u32 slices) {
                 cos(phi),
                 sin(phi) * sin(theta)
             );
-            v.push_back({
-                pos * 0.5f,
-                pos,
-                {(f32)j / slices, (f32)i / stacks}
-            });
+            // 切线 = d(pos)/d(theta)
+            glm::vec3 tangent(
+                -sin(theta),
+                0.0f,
+                cos(theta)
+            );
+            glm::vec3 bitangent = glm::normalize(glm::cross(pos, tangent));
+
+            MeshVertex mv;
+            mv.Position  = pos * 0.5f;
+            mv.Normal    = pos;
+            mv.TexCoord  = {(f32)j / slices, (f32)i / stacks};
+            mv.Tangent   = tangent;
+            mv.Bitangent = bitangent;
+            v.push_back(mv);
         }
     }
 

@@ -66,6 +66,7 @@ struct MaterialComponent : public Component {
     f32 SpecularR = 0.8f, SpecularG = 0.8f, SpecularB = 0.8f;
     f32 Shininess = 32.0f;
     std::string TextureName;    // 空 = 无纹理
+    std::string NormalMapName;  // 空 = 无法线贴图
     bool Emissive = false;      // 自发光物体 (跳过光照计算)
 };
 

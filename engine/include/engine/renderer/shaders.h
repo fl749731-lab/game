@@ -12,11 +12,14 @@ inline const char* LitVertex = R"(
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aTexCoord;
+layout(location = 3) in vec3 aTangent;
+layout(location = 4) in vec3 aBitangent;
 
 out vec3 vFragPos;
 out vec3 vNormal;
 out vec2 vTexCoord;
 out vec4 vFragPosLightSpace;
+out mat3 vTBN;
 
 uniform mat4 uVP;
 uniform mat4 uModel;
@@ -25,9 +28,16 @@ uniform mat4 uLightSpaceMat;
 void main() {
     vec4 wp = uModel * vec4(aPos, 1.0);
     vFragPos = wp.xyz;
-    vNormal = mat3(transpose(inverse(uModel))) * aNormal;
+    mat3 normalMat = mat3(transpose(inverse(uModel)));
+    vNormal = normalMat * aNormal;
     vTexCoord = aTexCoord;
     vFragPosLightSpace = uLightSpaceMat * wp;
+
+    vec3 T = normalize(normalMat * aTangent);
+    vec3 B = normalize(normalMat * aBitangent);
+    vec3 N = normalize(vNormal);
+    vTBN = mat3(T, B, N);
+
     gl_Position = uVP * wp;
 }
 )";
@@ -38,6 +48,7 @@ in vec3 vFragPos;
 in vec3 vNormal;
 in vec2 vTexCoord;
 in vec4 vFragPosLightSpace;
+in mat3 vTBN;
 out vec4 FragColor;
 
 uniform vec3 uMatDiffuse;
@@ -74,6 +85,9 @@ uniform sampler2D uTex;
 uniform sampler2D uShadowMap;
 uniform int uShadowEnabled;
 
+uniform sampler2D uNormalMap;
+uniform int uUseNormalMap;
+
 float CalcShadow(vec4 fragPosLightSpace) {
     vec3 proj = fragPosLightSpace.xyz / fragPosLightSpace.w;
     proj = proj * 0.5 + 0.5;
@@ -95,6 +109,12 @@ float CalcShadow(vec4 fragPosLightSpace) {
 
 void main() {
     vec3 N = normalize(vNormal);
+    // 法线贴图采样
+    if (uUseNormalMap == 1) {
+        vec3 mapN = texture(uNormalMap, vTexCoord).rgb;
+        mapN = mapN * 2.0 - 1.0; // [0,1] -> [-1,1]
+        N = normalize(vTBN * mapN);
+    }
     vec3 V = normalize(uViewPos - vFragPos);
     vec3 base = uMatDiffuse;
     if (uUseTex == 1) base = texture(uTex, vTexCoord).rgb;
