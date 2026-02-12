@@ -1,4 +1,5 @@
 #include "engine/renderer/post_process.h"
+#include "engine/renderer/screen_quad.h"
 #include "engine/core/log.h"
 
 #include <glad/glad.h>
@@ -61,35 +62,15 @@ void main() {
 )";
 
 void PostProcess::Init() {
-    // 全屏四边形 (2 三角形)
-    float quadVerts[] = {
-        // pos        // texcoord
-        -1.0f, -1.0f, 0.0f, 0.0f,
-         1.0f, -1.0f, 1.0f, 0.0f,
-         1.0f,  1.0f, 1.0f, 1.0f,
-        -1.0f, -1.0f, 0.0f, 0.0f,
-         1.0f,  1.0f, 1.0f, 1.0f,
-        -1.0f,  1.0f, 0.0f, 1.0f,
-    };
-
-    glGenVertexArrays(1, &s_QuadVAO);
-    glGenBuffers(1, &s_QuadVBO);
-    glBindVertexArray(s_QuadVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, s_QuadVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVerts), quadVerts, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-    glBindVertexArray(0);
+    // 使用共享 ScreenQuad
+    ScreenQuad::Init();
 
     s_Shader = std::make_shared<Shader>(ppVertSrc, ppFragSrc);
     LOG_INFO("[后处理] 初始化完成");
 }
 
 void PostProcess::Shutdown() {
-    if (s_QuadVAO) { glDeleteVertexArrays(1, &s_QuadVAO); s_QuadVAO = 0; }
-    if (s_QuadVBO) { glDeleteBuffers(1, &s_QuadVBO); s_QuadVBO = 0; }
+    // ScreenQuad 由外部统一管理生命周期
     s_Shader.reset();
     LOG_DEBUG("[后处理] 已清理");
 }
@@ -119,9 +100,7 @@ void PostProcess::Draw(u32 sourceTextureID, u32 bloomTextureID, f32 bloomIntensi
     glBindTexture(GL_TEXTURE_2D, sourceTextureID);
 
     glDisable(GL_DEPTH_TEST);
-    glBindVertexArray(s_QuadVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
-    glBindVertexArray(0);
+    ScreenQuad::Draw();
     glEnable(GL_DEPTH_TEST);
 }
 

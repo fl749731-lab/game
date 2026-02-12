@@ -316,6 +316,10 @@ void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
 
         s_LitShader->SetMat4("uModel", glm::value_ptr(model));
 
+        // CPU 预计算法线矩阵（避免 GPU 每顶点 inverse）
+        glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(model)));
+        s_LitShader->SetMat3("uNormalMat", glm::value_ptr(normalMat));
+
         // 材质：优先使用 MaterialComponent，回退到 RenderComponent 旧字段
         auto* mat = world.GetComponent<MaterialComponent>(e);
         if (mat) {

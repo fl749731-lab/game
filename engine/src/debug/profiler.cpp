@@ -10,6 +10,7 @@ std::unordered_map<std::string, Profiler::ActiveTimer> Profiler::s_ActiveTimers;
 Profiler::FrameStats Profiler::s_CurrentFrame;
 Profiler::FrameStats Profiler::s_LastFrame;
 std::unordered_map<std::string, std::vector<f64>> Profiler::s_History;
+static std::unordered_map<std::string, u32> s_HistoryIndex;  // 循环缓冲区写入位置
 bool Profiler::s_Enabled = true;
 
 void Profiler::BeginTimer(const std::string& name) {
@@ -35,11 +36,15 @@ void Profiler::EndFrame() {
     f64 total = 0;
     for (auto& t : s_CurrentFrame.Timers) {
         total += t.DurationMs;
-        // 存入历史
+        // 存入历史（循环缓冲区，避免 O(N) 头部删除）
         auto& hist = s_History[t.Name];
-        hist.push_back(t.DurationMs);
-        if (hist.size() > HISTORY_SIZE)
-            hist.erase(hist.begin());
+        auto& idx = s_HistoryIndex[t.Name];
+        if (hist.size() < HISTORY_SIZE) {
+            hist.push_back(t.DurationMs);
+        } else {
+            hist[idx % HISTORY_SIZE] = t.DurationMs;
+        }
+        idx++;
     }
     s_CurrentFrame.TotalFrameMs = total;
 

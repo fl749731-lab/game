@@ -23,18 +23,18 @@ out mat3 vTBN;
 
 uniform mat4 uVP;
 uniform mat4 uModel;
+uniform mat3 uNormalMat;  // CPU 预计算: mat3(transpose(inverse(uModel)))
 uniform mat4 uLightSpaceMat;
 
 void main() {
     vec4 wp = uModel * vec4(aPos, 1.0);
     vFragPos = wp.xyz;
-    mat3 normalMat = mat3(transpose(inverse(uModel)));
-    vNormal = normalMat * aNormal;
+    vNormal = uNormalMat * aNormal;
     vTexCoord = aTexCoord;
     vFragPosLightSpace = uLightSpaceMat * wp;
 
-    vec3 T = normalize(normalMat * aTangent);
-    vec3 B = normalize(normalMat * aBitangent);
+    vec3 T = normalize(uNormalMat * aTangent);
+    vec3 B = normalize(uNormalMat * aBitangent);
     vec3 N = normalize(vNormal);
     vTBN = mat3(T, B, N);
 

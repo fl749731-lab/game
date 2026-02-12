@@ -97,4 +97,8 @@ void Shader::SetMat4(const std::string& name, const f32* value) {
     glUniformMatrix4fv(GetUniformLocation(name), 1, GL_FALSE, value);
 }
 
+void Shader::SetMat3(const std::string& name, const f32* value) {
+    glUniformMatrix3fv(GetUniformLocation(name), 1, GL_FALSE, value);
+}
+
 } // namespace Engine

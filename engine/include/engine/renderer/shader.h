@@ -29,6 +29,7 @@ public:
     void SetVec3(const std::string& name, f32 x, f32 y, f32 z);
     void SetVec4(const std::string& name, f32 x, f32 y, f32 z, f32 w);
     void SetMat4(const std::string& name, const f32* value);
+    void SetMat3(const std::string& name, const f32* value);
 
 private:
     u32 m_ID = 0;

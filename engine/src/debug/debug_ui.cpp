@@ -253,9 +253,10 @@ void DebugUI::Flush(u32 screenWidth, u32 screenHeight) {
         return;
     }
 
-    // 构建顶点数据
-    std::vector<float> verts;
+    // 构建顶点数据（静态 vector 避免每帧分配）
+    static std::vector<float> verts;
     verts.reserve(s_TextQueue.size() * 20 * 6 * 4); // 估算
+    static constexpr size_t MAX_VBO_FLOATS = 4096 * 6 * 4; // 与 Init 中预分配一致
 
     const f32 uvW = (f32)CHAR_W / (f32)(COLS * CHAR_W);  // 1 字符在图集中的 UV 宽
     const f32 uvH = (f32)CHAR_H / (f32)(ROWS * CHAR_H);  // 1 字符在图集中的 UV 高
@@ -313,6 +314,12 @@ void DebugUI::Flush(u32 screenWidth, u32 screenHeight) {
         }
 
         if (verts.empty()) continue;
+
+        // 缓冲区溢出保护
+        if (verts.size() > MAX_VBO_FLOATS) {
+            LOG_WARN("[调试UI] 文本顶点超出 VBO 容量，截断渲染");
+            verts.resize(MAX_VBO_FLOATS);
+        }
 
         s_Shader->SetVec3("uColor", entry.Color.x, entry.Color.y, entry.Color.z);
         glBindVertexArray(s_VAO);

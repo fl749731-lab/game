@@ -154,9 +154,9 @@ public:
         return GetPool<T>().Has(e);
     }
 
-    /// 遍历所有拥有指定组件的实体
-    template<typename T>
-    void ForEach(std::function<void(Entity, T&)> fn) {
+    /// 遍历所有拥有指定组件的实体（模板回调，避免 std::function 堆分配）
+    template<typename T, typename Func>
+    void ForEach(Func&& fn) {
         auto& pool = GetPool<T>();
         for (auto& [e, comp] : pool) {
             fn(e, *static_cast<T*>(comp.get()));

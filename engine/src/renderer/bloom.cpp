@@ -1,4 +1,5 @@
 #include "engine/renderer/bloom.h"
+#include "engine/renderer/screen_quad.h"
 #include "engine/core/log.h"
 
 #include <glad/glad.h>
@@ -105,26 +106,8 @@ void Bloom::Init(u32 width, u32 height) {
     s_Width = width;
     s_Height = height;
 
-    // 全屏四边形（复用坐标）
-    float quadVerts[] = {
-        -1.0f, -1.0f, 0.0f, 0.0f,
-         1.0f, -1.0f, 1.0f, 0.0f,
-         1.0f,  1.0f, 1.0f, 1.0f,
-        -1.0f, -1.0f, 0.0f, 0.0f,
-         1.0f,  1.0f, 1.0f, 1.0f,
-        -1.0f,  1.0f, 0.0f, 1.0f,
-    };
-
-    glGenVertexArrays(1, &s_QuadVAO);
-    glGenBuffers(1, &s_QuadVBO);
-    glBindVertexArray(s_QuadVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, s_QuadVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVerts), quadVerts, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-    glBindVertexArray(0);
+    // 使用共享 ScreenQuad
+    ScreenQuad::Init();
 
     s_BrightShader = std::make_shared<Shader>(brightVert, brightFrag);
     s_BlurShader = std::make_shared<Shader>(blurVert, blurFrag);
@@ -136,8 +119,7 @@ void Bloom::Init(u32 width, u32 height) {
 }
 
 void Bloom::Shutdown() {
-    if (s_QuadVAO)      { glDeleteVertexArrays(1, &s_QuadVAO);  s_QuadVAO = 0; }
-    if (s_QuadVBO)      { glDeleteBuffers(1, &s_QuadVBO);       s_QuadVBO = 0; }
+    // ScreenQuad 由外部统一管理生命周期，不在此释放
     if (s_BrightFBO)    { glDeleteFramebuffers(1, &s_BrightFBO); s_BrightFBO = 0; }
     if (s_BrightTexture){ glDeleteTextures(1, &s_BrightTexture); s_BrightTexture = 0; }
     if (s_PingFBO)      { glDeleteFramebuffers(1, &s_PingFBO);   s_PingFBO = 0; }
@@ -211,8 +193,7 @@ u32 Bloom::Process(u32 hdrInputTexture) {
     glBindTexture(GL_TEXTURE_2D, hdrInputTexture);
 
     glDisable(GL_DEPTH_TEST);
-    glBindVertexArray(s_QuadVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    ScreenQuad::Draw();
 
     // ── Pass 2: Ping-Pong 高斯模糊 ──────────────────────────
     s_BlurShader->Bind();
@@ -221,6 +202,7 @@ u32 Bloom::Process(u32 hdrInputTexture) {
     bool horizontal = true;
     u32 inputTex = s_BrightTexture;
 
+    glBindVertexArray(ScreenQuad::GetVAO());  // 保持绑定，循环内直接 draw
     for (u32 i = 0; i < s_Iterations * 2; i++) {
         glBindFramebuffer(GL_FRAMEBUFFER, horizontal ? s_PingFBO : s_PongFBO);
         s_BlurShader->SetInt("uHorizontal", horizontal ? 1 : 0);
@@ -233,8 +215,8 @@ u32 Bloom::Process(u32 hdrInputTexture) {
         inputTex = horizontal ? s_PingTexture : s_PongTexture;
         horizontal = !horizontal;
     }
-
     glBindVertexArray(0);
+
     glEnable(GL_DEPTH_TEST);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 

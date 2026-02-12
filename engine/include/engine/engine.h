@@ -34,6 +34,7 @@
 #include "engine/renderer/fps_camera_controller.h"
 #include "engine/renderer/shadow_map.h"
 #include "engine/renderer/frustum.h"
+#include "engine/renderer/screen_quad.h"
 
 // Debug
 #include "engine/debug/debug_draw.h"
