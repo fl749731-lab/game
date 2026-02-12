@@ -44,25 +44,17 @@ void PerspectiveCamera::SetProjection(f32 fov, f32 aspect, f32 nearClip, f32 far
     m_ViewProjection = m_Projection * m_View;
 }
 
-glm::vec3 PerspectiveCamera::GetForward() const {
+void PerspectiveCamera::RecalculateView() {
+    // 一次性计算并缓存方向向量，避免每帧重复三角函数计算
     glm::vec3 front;
     front.x = cos(glm::radians(m_Yaw)) * cos(glm::radians(m_Pitch));
     front.y = sin(glm::radians(m_Pitch));
     front.z = sin(glm::radians(m_Yaw)) * cos(glm::radians(m_Pitch));
-    return glm::normalize(front);
-}
+    m_Forward = glm::normalize(front);
+    m_Right   = glm::normalize(glm::cross(m_Forward, glm::vec3(0.0f, 1.0f, 0.0f)));
+    m_Up      = glm::normalize(glm::cross(m_Right, m_Forward));
 
-glm::vec3 PerspectiveCamera::GetRight() const {
-    return glm::normalize(glm::cross(GetForward(), glm::vec3(0.0f, 1.0f, 0.0f)));
-}
-
-glm::vec3 PerspectiveCamera::GetUp() const {
-    return glm::normalize(glm::cross(GetRight(), GetForward()));
-}
-
-void PerspectiveCamera::RecalculateView() {
-    glm::vec3 front = GetForward();
-    m_View = glm::lookAt(m_Position, m_Position + front, glm::vec3(0.0f, 1.0f, 0.0f));
+    m_View = glm::lookAt(m_Position, m_Position + m_Forward, glm::vec3(0.0f, 1.0f, 0.0f));
     m_ViewProjection = m_Projection * m_View;
 }
 

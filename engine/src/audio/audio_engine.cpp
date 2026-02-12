@@ -25,6 +25,7 @@ struct SFXEntry {
 };
 static std::vector<SFXEntry> s_ActiveSFX;
 static std::mutex s_SFXMutex;
+static u32 s_SFXPlayCount = 0;  // 用于控制清理频率
 
 // ── 初始化 ──────────────────────────────────────────────────
 
@@ -132,6 +133,22 @@ void AudioEngine::SetMusicVolume(f32 volume) {
 
 void AudioEngine::PlaySFX(const std::string& filepath, f32 volume) {
     if (!s_Initialized) return;
+
+    // 每16次播放清理一次已完成音效（避免每次都遍历）
+    if ((++s_SFXPlayCount & 0xF) == 0) {
+        std::lock_guard<std::mutex> lock(s_SFXMutex);
+        s_ActiveSFX.erase(
+            std::remove_if(s_ActiveSFX.begin(), s_ActiveSFX.end(),
+                [](SFXEntry& e) {
+                    if (e.Sound && ma_sound_at_end(e.Sound)) {
+                        ma_sound_uninit(e.Sound);
+                        delete e.Sound;
+                        return true;
+                    }
+                    return false;
+                }),
+            s_ActiveSFX.end());
+    }
 
     // 使用 ma_sound 创建并设置音量
     auto* sound = new ma_sound();

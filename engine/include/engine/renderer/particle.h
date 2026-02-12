@@ -14,9 +14,12 @@ struct Particle {
     glm::vec3 Position = {0, 0, 0};
     glm::vec3 Velocity = {0, 0, 0};
     glm::vec3 Color    = {1, 1, 1};
+    glm::vec3 ColorStart = {1, 0.8f, 0.3f};
+    glm::vec3 ColorEnd   = {1, 0.1f, 0.0f};
     f32 Size     = 0.1f;
     f32 Life     = 1.0f;
     f32 MaxLife  = 1.0f;
+    f32 Gravity  = -2.0f;
 
     bool IsAlive() const { return Life > 0.0f; }
 };
@@ -67,7 +70,17 @@ private:
     static u32 s_AliveCount;
     static u32 s_QuadVAO;
     static u32 s_QuadVBO;
+    static u32 s_InstanceVBO;
     static Ref<Shader> s_Shader;
+
+    // GPU 实例数据结构
+    struct InstanceData {
+        glm::vec3 Position;
+        float Size;
+        glm::vec3 Color;
+        float Alpha;
+    };
+    static std::vector<InstanceData> s_InstanceBuffer;
 };
 
 } // namespace Engine

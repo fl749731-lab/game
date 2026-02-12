@@ -20,8 +20,10 @@ Shader::Shader(const std::string& vertexSrc, const std::string& fragmentSrc) {
         char infoLog[512];
         glGetProgramInfoLog(m_ID, 512, nullptr, infoLog);
         LOG_ERROR("Shader 程序链接失败: %s", infoLog);
+        m_Valid = false;
     } else {
         LOG_DEBUG("Shader 程序 %u 链接成功", m_ID);
+        m_Valid = true;
     }
 
     glDeleteShader(vertShader);
@@ -35,6 +37,7 @@ Shader::~Shader() {
 }
 
 void Shader::Bind() const {
+    if (!m_Valid) return;
     glUseProgram(m_ID);
 }
 
@@ -61,6 +64,7 @@ u32 Shader::CompileShader(u32 type, const std::string& source) {
 }
 
 i32 Shader::GetUniformLocation(const std::string& name) {
+    if (!m_Valid) return -1;
     auto it = m_UniformCache.find(name);
     if (it != m_UniformCache.end()) return it->second;
 

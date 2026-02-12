@@ -50,9 +50,9 @@ public:
     f32 GetPitch() const { return m_Pitch; }
     void SetRotation(f32 yaw, f32 pitch) { m_Yaw = yaw; m_Pitch = pitch; RecalculateView(); }
 
-    glm::vec3 GetForward() const;
-    glm::vec3 GetRight() const;
-    glm::vec3 GetUp() const;
+    const glm::vec3& GetForward() const { return m_Forward; }
+    const glm::vec3& GetRight() const { return m_Right; }
+    const glm::vec3& GetUp() const { return m_Up; }
 
     f32 GetFOV() const { return m_Fov; }
     f32 GetNearClip() const { return m_NearClip; }
@@ -79,6 +79,10 @@ private:
     f32 m_Aspect = 16.0f / 9.0f;
     f32 m_NearClip = 0.1f;
     f32 m_FarClip = 100.0f;
+
+    glm::vec3 m_Forward = { 0.0f, 0.0f, -1.0f };
+    glm::vec3 m_Right   = { 1.0f, 0.0f, 0.0f };
+    glm::vec3 m_Up      = { 0.0f, 1.0f, 0.0f };
 };
 
 } // namespace Engine

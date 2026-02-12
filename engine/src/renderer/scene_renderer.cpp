@@ -174,6 +174,7 @@ void SceneRenderer::RenderScene(Scene& scene, PerspectiveCamera& camera) {
             glm::mat4 model = glm::translate(glm::mat4(1.0f), {tr->X, tr->Y, tr->Z});
             model = glm::rotate(model, glm::radians(tr->RotY), {0, 1, 0});
             model = glm::rotate(model, glm::radians(tr->RotX), {1, 0, 0});
+            model = glm::rotate(model, glm::radians(tr->RotZ), {0, 0, 1});
             model = glm::scale(model, {tr->ScaleX, tr->ScaleY, tr->ScaleZ});
 
             depthShader->SetMat4("uModel", glm::value_ptr(model));
@@ -302,6 +303,7 @@ void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
         glm::mat4 model = glm::translate(glm::mat4(1.0f), {tr->X, tr->Y, tr->Z});
         model = glm::rotate(model, glm::radians(tr->RotY), {0, 1, 0});
         model = glm::rotate(model, glm::radians(tr->RotX), {1, 0, 0});
+        model = glm::rotate(model, glm::radians(tr->RotZ), {0, 0, 1});
         model = glm::scale(model, {tr->ScaleX, tr->ScaleY, tr->ScaleZ});
 
         // 旋转动画（如果 TagComponent 指定）

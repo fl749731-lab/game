@@ -20,6 +20,7 @@ public:
     void Unbind() const;
 
     u32 GetID() const { return m_ID; }
+    bool IsValid() const { return m_Valid; }
 
     // Uniform 设置
     void SetInt(const std::string& name, i32 value);
@@ -31,6 +32,7 @@ public:
 
 private:
     u32 m_ID = 0;
+    bool m_Valid = false;
     mutable std::unordered_map<std::string, i32> m_UniformCache;
 
     u32 CompileShader(u32 type, const std::string& source);

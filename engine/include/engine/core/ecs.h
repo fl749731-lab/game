@@ -65,9 +65,13 @@ struct MaterialComponent : public Component {
     f32 DiffuseR = 0.8f, DiffuseG = 0.8f, DiffuseB = 0.8f;
     f32 SpecularR = 0.8f, SpecularG = 0.8f, SpecularB = 0.8f;
     f32 Shininess = 32.0f;
+    f32 Roughness = 0.5f;       // PBR 粗糙度 (0=光滑 1=粗糙)
+    f32 Metallic  = 0.0f;       // PBR 金属度 (0=非金属 1=金属)
     std::string TextureName;    // 空 = 无纹理
     std::string NormalMapName;  // 空 = 无法线贴图
     bool Emissive = false;      // 自发光物体 (跳过光照计算)
+    f32 EmissiveR = 1.0f, EmissiveG = 1.0f, EmissiveB = 1.0f;
+    f32 EmissiveIntensity = 1.0f;
 };
 
 // ── ComponentPool —— 类型擦除的组件存储 ─────────────────────
