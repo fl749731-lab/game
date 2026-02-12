@@ -38,6 +38,10 @@
 #include "engine/debug/debug_ui.h"
 #include "engine/debug/profiler.h"
 
+// Physics
+#include "engine/physics/collision.h"
+#include "engine/physics/physics_world.h"
+
 // AI (optional)
 #ifdef ENGINE_HAS_PYTHON
 #include "engine/ai/python_engine.h"
