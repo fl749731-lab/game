@@ -5,12 +5,13 @@
 
 namespace Engine {
 
+Renderer::Stats Renderer::s_Stats;
+
 #ifdef ENGINE_DEBUG
 static void APIENTRY OpenGLDebugCallback(GLenum source, GLenum type, GLuint id,
     GLenum severity, GLsizei length, const GLchar* message, const void* userParam)
 {
     if (severity == GL_DEBUG_SEVERITY_NOTIFICATION) return;
-
     const char* severityStr = "未知";
     switch (severity) {
         case GL_DEBUG_SEVERITY_HIGH:   severityStr = "高"; break;
@@ -36,7 +37,6 @@ void Renderer::Init() {
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
 
-    // 面剔除 — 提升渲染性能
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
     glFrontFace(GL_CCW);
@@ -66,11 +66,39 @@ void Renderer::SetViewport(u32 x, u32 y, u32 width, u32 height) {
 void Renderer::DrawArrays(u32 vao, u32 vertexCount) {
     glBindVertexArray(vao);
     glDrawArrays(GL_TRIANGLES, 0, vertexCount);
+    s_Stats.DrawCalls++;
+    s_Stats.TriangleCount += vertexCount / 3;
 }
 
 void Renderer::DrawElements(u32 vao, u32 indexCount) {
     glBindVertexArray(vao);
     glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, nullptr);
+    s_Stats.DrawCalls++;
+    s_Stats.TriangleCount += indexCount / 3;
+}
+
+void Renderer::ResetStats() {
+    s_Stats.DrawCalls = 0;
+    s_Stats.TriangleCount = 0;
+}
+
+Renderer::Stats Renderer::GetStats() {
+    return s_Stats;
+}
+
+void Renderer::SetCullFace(bool enabled) {
+    if (enabled) glEnable(GL_CULL_FACE);
+    else glDisable(GL_CULL_FACE);
+}
+
+void Renderer::SetWireframe(bool enabled) {
+    if (enabled) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    else glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+}
+
+void Renderer::NotifyDraw(u32 triangleCount) {
+    s_Stats.DrawCalls++;
+    s_Stats.TriangleCount += triangleCount;
 }
 
 } // namespace Engine

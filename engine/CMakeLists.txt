@@ -7,14 +7,19 @@ file(GLOB_RECURSE ENGINE_SOURCES
 
 add_library(Engine STATIC ${ENGINE_SOURCES})
 
-# 查找 Python
-find_package(Python3 COMPONENTS Development QUIET)
+# 查找 Python (可选，默认关闭)
+option(ENGINE_ENABLE_PYTHON "启用 Python AI 层" OFF)
 
-if(Python3_FOUND)
-    message(STATUS "Found Python ${Python3_VERSION}: ${Python3_INCLUDE_DIRS}")
-    target_compile_definitions(Engine PUBLIC ENGINE_HAS_PYTHON)
+if(ENGINE_ENABLE_PYTHON)
+    find_package(Python3 COMPONENTS Development QUIET)
+    if(Python3_FOUND)
+        message(STATUS "Found Python ${Python3_VERSION}: ${Python3_INCLUDE_DIRS}")
+        target_compile_definitions(Engine PUBLIC ENGINE_HAS_PYTHON)
+    else()
+        message(WARNING "Python3 not found, AI layer disabled")
+    endif()
 else()
-    message(WARNING "Python3 not found, AI layer disabled")
+    message(STATUS "Python AI layer disabled (use -DENGINE_ENABLE_PYTHON=ON to enable)")
 endif()
 
 target_include_directories(Engine

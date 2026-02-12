@@ -10,7 +10,7 @@
             if (!(condition)) {                                        \
                 LOG_FATAL("断言失败: %s | 文件: %s | 行: %d",           \
                     #condition, __FILE__, __LINE__);                   \
-                __debugbreak();                                        \
+                __builtin_trap();                                      \
             }                                                          \
         } while(0)
 #else

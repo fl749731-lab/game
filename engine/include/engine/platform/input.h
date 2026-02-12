@@ -46,6 +46,14 @@ enum class MouseButton {
     Middle = 2,
 };
 
+// ── 鼠标模式 ────────────────────────────────────────────────
+
+enum class CursorMode {
+    Normal,     // 正常光标
+    Hidden,     // 隐藏但不锁定
+    Captured,   // FPS 模式：隐藏并锁定到窗口中心
+};
+
 // ── 输入系统 ────────────────────────────────────────────────
 
 class Input {
@@ -64,8 +72,15 @@ public:
     static float GetMouseDeltaY();
     static float GetScrollOffset();
 
-    /// 每帧更新（在 Window::Update 之前调用）
+    /// 鼠标模式控制
+    static void SetCursorMode(CursorMode mode);
+    static CursorMode GetCursorMode();
+
+    /// 每帧更新（在主循环末尾调用，消耗 delta 和 scroll）
     static void Update();
+
+    /// 帧末重置（在 Window::Update 之后调用）
+    static void EndFrame();
 
 private:
     static GLFWwindow* s_Window;
@@ -73,6 +88,7 @@ private:
     static float s_DeltaX, s_DeltaY;
     static float s_ScrollOffset;
     static bool s_FirstMouse;
+    static CursorMode s_CursorMode;
 
     static void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 };

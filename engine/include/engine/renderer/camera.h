@@ -54,6 +54,13 @@ public:
     glm::vec3 GetRight() const;
     glm::vec3 GetUp() const;
 
+    f32 GetFOV() const { return m_Fov; }
+    f32 GetNearClip() const { return m_NearClip; }
+    f32 GetFarClip() const { return m_FarClip; }
+    f32 GetAspect() const { return m_Aspect; }
+    void SetFOV(f32 fov);
+    void Zoom(f32 delta);
+
     const glm::mat4& GetProjectionMatrix() const { return m_Projection; }
     const glm::mat4& GetViewMatrix() const { return m_View; }
     const glm::mat4& GetViewProjectionMatrix() const { return m_ViewProjection; }
@@ -69,6 +76,9 @@ private:
     f32 m_Yaw = -90.0f;   // 面向 -Z
     f32 m_Pitch = 0.0f;
     f32 m_Fov = 45.0f;
+    f32 m_Aspect = 16.0f / 9.0f;
+    f32 m_NearClip = 0.1f;
+    f32 m_FarClip = 100.0f;
 };
 
 } // namespace Engine

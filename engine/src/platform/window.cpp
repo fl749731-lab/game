@@ -82,7 +82,11 @@ void Window::Shutdown() {
         glfwDestroyWindow(m_Window);
         m_Window = nullptr;
     }
-    // 注意: 这里不调用 glfwTerminate()，让 main 来管理
+    if (s_GLFWInitialized) {
+        glfwTerminate();
+        s_GLFWInitialized = false;
+        LOG_DEBUG("GLFW 已终止");
+    }
 }
 
 void Window::Update() {
@@ -97,6 +101,11 @@ bool Window::ShouldClose() const {
 void Window::SetVSync(bool enabled) {
     glfwSwapInterval(enabled ? 1 : 0);
     m_VSync = enabled;
+}
+
+void Window::SetTitle(const std::string& title) {
+    m_Title = title;
+    if (m_Window) glfwSetWindowTitle(m_Window, title.c_str());
 }
 
 } // namespace Engine

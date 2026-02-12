@@ -201,4 +201,28 @@ public:
     const char* GetName() const override { return "MovementSystem"; }
 };
 
+/// 生命周期组件 — 倒计时后自动销毁
+struct LifetimeComponent : public Component {
+    f32 TimeRemaining = 5.0f;
+};
+
+/// 生命周期系统 — 每帧更新倒计时，到期则标记删除
+class LifetimeSystem : public System {
+public:
+    void Update(ECSWorld& world, f32 dt) override {
+        std::vector<Entity> toDestroy;
+        for (auto e : world.GetEntities()) {
+            auto* lc = world.GetComponent<LifetimeComponent>(e);
+            if (lc) {
+                lc->TimeRemaining -= dt;
+                if (lc->TimeRemaining <= 0) toDestroy.push_back(e);
+            }
+        }
+        for (auto e : toDestroy) {
+            world.DestroyEntity(e);
+        }
+    }
+    const char* GetName() const override { return "LifetimeSystem"; }
+};
+
 } // namespace Engine

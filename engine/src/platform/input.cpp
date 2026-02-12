@@ -11,6 +11,7 @@ float Input::s_DeltaX = 0;
 float Input::s_DeltaY = 0;
 float Input::s_ScrollOffset = 0;
 bool Input::s_FirstMouse = true;
+CursorMode Input::s_CursorMode = CursorMode::Normal;
 
 void Input::Init(GLFWwindow* window) {
     s_Window = window;
@@ -18,7 +19,7 @@ void Input::Init(GLFWwindow* window) {
 }
 
 void Input::Update() {
-    // 鼠标 Delta
+    // 计算鼠标 Delta
     double mx, my;
     glfwGetCursorPos(s_Window, &mx, &my);
     float x = (float)mx, y = (float)my;
@@ -33,13 +34,35 @@ void Input::Update() {
     s_DeltaY = s_LastMouseY - y;  // Y 反转（屏幕坐标向下为正）
     s_LastMouseX = x;
     s_LastMouseY = y;
+}
 
-    // 每帧消耗滚轮值
+void Input::EndFrame() {
+    // 帧末消耗：在下一帧开始前清零
     s_ScrollOffset = 0;
 }
 
 void Input::ScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
-    s_ScrollOffset = (float)yoffset;
+    s_ScrollOffset += (float)yoffset;  // 累加而非覆盖，防止一帧内多次滚动
+}
+
+void Input::SetCursorMode(CursorMode mode) {
+    s_CursorMode = mode;
+    switch (mode) {
+        case CursorMode::Normal:
+            glfwSetInputMode(s_Window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            break;
+        case CursorMode::Hidden:
+            glfwSetInputMode(s_Window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+            break;
+        case CursorMode::Captured:
+            glfwSetInputMode(s_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            s_FirstMouse = true;  // 重新校准，避免跳变
+            break;
+    }
+}
+
+CursorMode Input::GetCursorMode() {
+    return s_CursorMode;
 }
 
 bool Input::IsKeyPressed(Key key) {

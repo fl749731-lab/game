@@ -37,6 +37,8 @@ public:
     void SetVSync(bool enabled);
     bool IsVSync() const { return m_VSync; }
 
+    void SetTitle(const std::string& title);
+
 private:
     GLFWwindow* m_Window = nullptr;
     std::string m_Title;

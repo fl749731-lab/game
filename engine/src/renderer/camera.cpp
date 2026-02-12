@@ -28,7 +28,7 @@ void OrthographicCamera::RecalculateView() {
 // ── PerspectiveCamera ───────────────────────────────────────
 
 PerspectiveCamera::PerspectiveCamera(f32 fov, f32 aspect, f32 nearClip, f32 farClip)
-    : m_Fov(fov)
+    : m_Fov(fov), m_Aspect(aspect), m_NearClip(nearClip), m_FarClip(farClip)
     , m_Projection(glm::perspective(glm::radians(fov), aspect, nearClip, farClip))
     , m_View(1.0f)
 {
@@ -37,6 +37,9 @@ PerspectiveCamera::PerspectiveCamera(f32 fov, f32 aspect, f32 nearClip, f32 farC
 
 void PerspectiveCamera::SetProjection(f32 fov, f32 aspect, f32 nearClip, f32 farClip) {
     m_Fov = fov;
+    m_Aspect = aspect;
+    m_NearClip = nearClip;
+    m_FarClip = farClip;
     m_Projection = glm::perspective(glm::radians(fov), aspect, nearClip, farClip);
     m_ViewProjection = m_Projection * m_View;
 }
@@ -61,6 +64,16 @@ void PerspectiveCamera::RecalculateView() {
     glm::vec3 front = GetForward();
     m_View = glm::lookAt(m_Position, m_Position + front, glm::vec3(0.0f, 1.0f, 0.0f));
     m_ViewProjection = m_Projection * m_View;
+}
+
+void PerspectiveCamera::SetFOV(f32 fov) {
+    m_Fov = glm::clamp(fov, 10.0f, 120.0f);
+    m_Projection = glm::perspective(glm::radians(m_Fov), m_Aspect, m_NearClip, m_FarClip);
+    m_ViewProjection = m_Projection * m_View;
+}
+
+void PerspectiveCamera::Zoom(f32 delta) {
+    SetFOV(m_Fov - delta * 2.0f);
 }
 
 } // namespace Engine

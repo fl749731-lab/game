@@ -1,4 +1,5 @@
 #include "engine/renderer/mesh.h"
+#include "engine/renderer/renderer.h"
 #include "engine/core/log.h"
 
 #include <glad/glad.h>
@@ -55,6 +56,9 @@ void Mesh::Draw() const {
     glBindVertexArray(m_VAO);
     glDrawElements(GL_TRIANGLES, m_IndexCount, GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
+
+    // 更新渲染统计
+    Renderer::NotifyDraw(m_IndexCount / 3);
 }
 
 // ── OBJ 加载器 ──────────────────────────────────────────────

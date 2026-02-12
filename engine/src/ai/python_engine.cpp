@@ -1,3 +1,5 @@
+#ifdef ENGINE_HAS_PYTHON
+
 #include "engine/ai/python_engine.h"
 
 // Python C API
@@ -235,3 +237,5 @@ void AIAgent::UpdateAI(f32 dt) {
 
 } // namespace AI
 } // namespace Engine
+
+#endif // ENGINE_HAS_PYTHON
