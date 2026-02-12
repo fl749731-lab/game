@@ -44,6 +44,9 @@
 #include "engine/physics/collision.h"
 #include "engine/physics/physics_world.h"
 
+// Audio
+#include "engine/audio/audio_engine.h"
+
 // AI (optional)
 #ifdef ENGINE_HAS_PYTHON
 #include "engine/ai/python_engine.h"
