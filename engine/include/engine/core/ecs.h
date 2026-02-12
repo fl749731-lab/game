@@ -56,8 +56,17 @@ struct AIComponent : public Component {
 struct RenderComponent : public Component {
     std::string MeshType = "cube";  // cube, sphere, plane, obj
     std::string ObjPath;
+    // 兼容 — 新代码请使用 MaterialComponent
     f32 ColorR = 1, ColorG = 1, ColorB = 1;
     f32 Shininess = 32.0f;
+};
+
+struct MaterialComponent : public Component {
+    f32 DiffuseR = 0.8f, DiffuseG = 0.8f, DiffuseB = 0.8f;
+    f32 SpecularR = 0.8f, SpecularG = 0.8f, SpecularB = 0.8f;
+    f32 Shininess = 32.0f;
+    std::string TextureName;    // 空 = 无纹理
+    bool Emissive = false;      // 自发光物体 (跳过光照计算)
 };
 
 // ── ComponentPool —— 类型擦除的组件存储 ─────────────────────

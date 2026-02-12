@@ -29,6 +29,8 @@
 #include "engine/renderer/skybox.h"
 #include "engine/renderer/particle.h"
 #include "engine/renderer/bloom.h"
+#include "engine/renderer/scene_renderer.h"
+#include "engine/renderer/shaders.h"
 
 // Debug
 #include "engine/debug/debug_draw.h"
