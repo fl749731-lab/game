@@ -32,6 +32,8 @@ public:
     DirectionalLight& GetDirLight() { return m_DirLight; }
     std::vector<PointLight>& GetPointLights() { return m_PointLights; }
     PointLight& AddPointLight() { m_PointLights.emplace_back(); return m_PointLights.back(); }
+    std::vector<SpotLight>& GetSpotLights() { return m_SpotLights; }
+    SpotLight& AddSpotLight() { m_SpotLights.emplace_back(); return m_SpotLights.back(); }
 
     /// 更新 (调用所有 System)
     void Update(f32 dt);
@@ -46,6 +48,7 @@ private:
     ECSWorld m_World;
     DirectionalLight m_DirLight;
     std::vector<PointLight> m_PointLights;
+    std::vector<SpotLight> m_SpotLights;
 };
 
 // ── 场景管理器 ──────────────────────────────────────────────

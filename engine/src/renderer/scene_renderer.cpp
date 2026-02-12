@@ -19,6 +19,13 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include <vector>
+#include <array>
+
+// ── 预缓存点光 Uniform 名称（避免每帧 string 分配）───────
+struct PLUniformNames {
+    std::string Pos, Color, Intensity;
+};
+static std::array<PLUniformNames, Engine::MAX_POINT_LIGHTS> s_PLUniforms;
 
 namespace Engine {
 
@@ -76,10 +83,19 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
     glGenTextures(1, &s_CheckerTexID);
     glBindTexture(GL_TEXTURE_2D, s_CheckerTexID);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, ts, ts, 0, GL_RGBA, GL_UNSIGNED_BYTE, ck.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    // 预缓存点光 Uniform 名称
+    for (int i = 0; i < MAX_POINT_LIGHTS; i++) {
+        std::string idx = std::to_string(i);
+        s_PLUniforms[i].Pos       = "uPLPos[" + idx + "]";
+        s_PLUniforms[i].Color     = "uPLColor[" + idx + "]";
+        s_PLUniforms[i].Intensity = "uPLIntensity[" + idx + "]";
+    }
 
     // 后处理 + Bloom
     PostProcess::Init();
@@ -170,10 +186,9 @@ void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
     // 点光源 Uniform
     s_LitShader->SetInt("uPLCount", (int)pls.size());
     for (int i = 0; i < (int)pls.size() && i < MAX_POINT_LIGHTS; i++) {
-        std::string idx = std::to_string(i);
-        s_LitShader->SetVec3("uPLPos[" + idx + "]", pls[i].Position.x, pls[i].Position.y, pls[i].Position.z);
-        s_LitShader->SetVec3("uPLColor[" + idx + "]", pls[i].Color.x, pls[i].Color.y, pls[i].Color.z);
-        s_LitShader->SetFloat("uPLIntensity[" + idx + "]", pls[i].Intensity);
+        s_LitShader->SetVec3(s_PLUniforms[i].Pos, pls[i].Position.x, pls[i].Position.y, pls[i].Position.z);
+        s_LitShader->SetVec3(s_PLUniforms[i].Color, pls[i].Color.x, pls[i].Color.y, pls[i].Color.z);
+        s_LitShader->SetFloat(s_PLUniforms[i].Intensity, pls[i].Intensity);
     }
 
     // 遍历实体

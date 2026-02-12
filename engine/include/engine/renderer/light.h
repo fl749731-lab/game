@@ -38,4 +38,23 @@ struct PointLight {
 // ── 最大点光源数量 ──────────────────────────────────────────
 constexpr int MAX_POINT_LIGHTS = 8;
 
+// ── 聚光灯 ──────────────────────────────────────────────────
+
+struct SpotLight {
+    glm::vec3 Position  = { 0.0f, 5.0f, 0.0f };
+    glm::vec3 Direction = { 0.0f, -1.0f, 0.0f };
+    glm::vec3 Color     = { 1.0f, 1.0f, 1.0f };
+    f32 Intensity = 1.0f;
+
+    f32 InnerCutoff = 12.5f;   // 内切角 (度)
+    f32 OuterCutoff = 17.5f;   // 外切角 (度)
+
+    // 衰减参数
+    f32 Constant  = 1.0f;
+    f32 Linear    = 0.09f;
+    f32 Quadratic = 0.032f;
+};
+
+constexpr int MAX_SPOT_LIGHTS = 4;
+
 } // namespace Engine

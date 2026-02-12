@@ -12,6 +12,7 @@ float Input::s_DeltaY = 0;
 float Input::s_ScrollOffset = 0;
 bool Input::s_FirstMouse = true;
 CursorMode Input::s_CursorMode = CursorMode::Normal;
+std::unordered_map<int, bool> Input::s_KeyStateLastFrame;
 
 void Input::Init(GLFWwindow* window) {
     s_Window = window;
@@ -37,8 +38,12 @@ void Input::Update() {
 }
 
 void Input::EndFrame() {
-    // 帧末消耗：在下一帧开始前清零
     s_ScrollOffset = 0;
+
+    // 更新按键上帧状态（用于边沿检测）
+    for (auto& [key, wasPressed] : s_KeyStateLastFrame) {
+        wasPressed = (glfwGetKey(s_Window, key) == GLFW_PRESS);
+    }
 }
 
 void Input::ScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
@@ -73,6 +78,28 @@ bool Input::IsKeyPressed(Key key) {
 bool Input::IsKeyDown(Key key) {
     int state = glfwGetKey(s_Window, static_cast<int>(key));
     return state == GLFW_PRESS || state == GLFW_REPEAT;
+}
+
+bool Input::IsKeyJustPressed(Key key) {
+    int k = static_cast<int>(key);
+    bool nowPressed = (glfwGetKey(s_Window, k) == GLFW_PRESS);
+    auto it = s_KeyStateLastFrame.find(k);
+    if (it == s_KeyStateLastFrame.end()) {
+        s_KeyStateLastFrame[k] = nowPressed;
+        return nowPressed; // 首次查询，若当前按下则视为刚按下
+    }
+    return nowPressed && !it->second;
+}
+
+bool Input::IsKeyJustReleased(Key key) {
+    int k = static_cast<int>(key);
+    bool nowPressed = (glfwGetKey(s_Window, k) == GLFW_PRESS);
+    auto it = s_KeyStateLastFrame.find(k);
+    if (it == s_KeyStateLastFrame.end()) {
+        s_KeyStateLastFrame[k] = nowPressed;
+        return false;
+    }
+    return !nowPressed && it->second;
 }
 
 bool Input::IsMouseButtonPressed(MouseButton button) {

@@ -3,6 +3,7 @@
 #include "engine/core/types.h"
 #include "engine/core/scene.h"
 #include "engine/renderer/camera.h"
+#include "engine/renderer/shader.h"
 #include "engine/renderer/framebuffer.h"
 
 namespace Engine {

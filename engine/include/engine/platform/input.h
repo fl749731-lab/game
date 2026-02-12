@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/types.h"
+#include <unordered_map>
 
 struct GLFWwindow;
 
@@ -64,6 +65,11 @@ public:
     static bool IsKeyPressed(Key key);
     static bool IsKeyDown(Key key);
 
+    /// 按键边沿检测（仅在按下瞬间返回 true）
+    static bool IsKeyJustPressed(Key key);
+    /// 按键释放边沿检测
+    static bool IsKeyJustReleased(Key key);
+
     /// 鼠标
     static bool IsMouseButtonPressed(MouseButton button);
     static float GetMouseX();
@@ -89,6 +95,7 @@ private:
     static float s_ScrollOffset;
     static bool s_FirstMouse;
     static CursorMode s_CursorMode;
+    static std::unordered_map<int, bool> s_KeyStateLastFrame;
 
     static void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 };
