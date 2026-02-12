@@ -7,6 +7,7 @@
 #include "engine/renderer/particle.h"
 #include "engine/renderer/texture.h"
 #include "engine/renderer/shadow_map.h"
+#include "engine/renderer/frustum.h"
 #include "engine/core/resource_manager.h"
 #include "engine/core/log.h"
 #include "engine/core/time.h"
@@ -25,6 +26,7 @@
 // ── 预缓存点光 Uniform 名称（避免每帧 string 分配）───────
 struct PLUniformNames {
     std::string Pos, Color, Intensity;
+    std::string Constant, Linear, Quadratic;
 };
 static std::array<PLUniformNames, Engine::MAX_POINT_LIGHTS> s_PLUniforms;
 
@@ -104,6 +106,9 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
         s_PLUniforms[i].Pos       = "uPLPos[" + idx + "]";
         s_PLUniforms[i].Color     = "uPLColor[" + idx + "]";
         s_PLUniforms[i].Intensity = "uPLIntensity[" + idx + "]";
+        s_PLUniforms[i].Constant  = "uPLConstant[" + idx + "]";
+        s_PLUniforms[i].Linear    = "uPLLinear[" + idx + "]";
+        s_PLUniforms[i].Quadratic = "uPLQuadratic[" + idx + "]";
     }
 
     // 预缓存聚光灯 Uniform 名称
@@ -248,6 +253,9 @@ void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
         s_LitShader->SetVec3(s_PLUniforms[i].Pos, pls[i].Position.x, pls[i].Position.y, pls[i].Position.z);
         s_LitShader->SetVec3(s_PLUniforms[i].Color, pls[i].Color.x, pls[i].Color.y, pls[i].Color.z);
         s_LitShader->SetFloat(s_PLUniforms[i].Intensity, pls[i].Intensity);
+        s_LitShader->SetFloat(s_PLUniforms[i].Constant, pls[i].Constant);
+        s_LitShader->SetFloat(s_PLUniforms[i].Linear, pls[i].Linear);
+        s_LitShader->SetFloat(s_PLUniforms[i].Quadratic, pls[i].Quadratic);
     }
 
     // 聚光灯 Uniform
@@ -265,11 +273,29 @@ void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
         s_LitShader->SetFloat(s_SLUniforms[i].Quadratic, sls[i].Quadratic);
     }
 
+    // 视锥体剔除准备
+    Frustum frustum;
+    frustum.ExtractFromVP(camera.GetViewProjectionMatrix());
+
     // 遍历实体
     for (auto e : world.GetEntities()) {
         auto* tr = world.GetComponent<TransformComponent>(e);
         auto* rc = world.GetComponent<RenderComponent>(e);
         if (!tr || !rc) continue;
+
+        // 视锥体剪裁 — 跳过不可见实体
+        {
+            AABB worldAABB;
+            worldAABB.Min = glm::vec3(tr->X - tr->ScaleX * 0.5f,
+                                      tr->Y - tr->ScaleY * 0.5f,
+                                      tr->Z - tr->ScaleZ * 0.5f);
+            worldAABB.Max = glm::vec3(tr->X + tr->ScaleX * 0.5f,
+                                      tr->Y + tr->ScaleY * 0.5f,
+                                      tr->Z + tr->ScaleZ * 0.5f);
+            // plane 很大，不剪裁
+            if (rc->MeshType != "plane" && !frustum.IsAABBVisible(worldAABB))
+                continue;
+        }
 
         // Model 矩阵
         glm::mat4 model = glm::translate(glm::mat4(1.0f), {tr->X, tr->Y, tr->Z});

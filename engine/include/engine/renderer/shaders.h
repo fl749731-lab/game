@@ -51,6 +51,9 @@ uniform int uPLCount;
 uniform vec3 uPLPos[MAX_PL];
 uniform vec3 uPLColor[MAX_PL];
 uniform float uPLIntensity[MAX_PL];
+uniform float uPLConstant[MAX_PL];
+uniform float uPLLinear[MAX_PL];
+uniform float uPLQuadratic[MAX_PL];
 
 #define MAX_SL 4
 uniform int uSLCount;
@@ -113,7 +116,7 @@ void main() {
     for (int i = 0; i < uPLCount; i++) {
         vec3 pL = normalize(uPLPos[i] - vFragPos);
         float d = length(uPLPos[i] - vFragPos);
-        float att = 1.0 / (1.0 + 0.09*d + 0.032*d*d);
+        float att = 1.0 / (uPLConstant[i] + uPLLinear[i]*d + uPLQuadratic[i]*d*d);
         float pDiff = max(dot(N, pL), 0.0);
         vec3 pH = normalize(pL + V);
         float pSpec = pow(max(dot(N, pH), 0.0), uShininess);

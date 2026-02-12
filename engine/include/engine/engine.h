@@ -33,6 +33,7 @@
 #include "engine/renderer/shaders.h"
 #include "engine/renderer/fps_camera_controller.h"
 #include "engine/renderer/shadow_map.h"
+#include "engine/renderer/frustum.h"
 
 // Debug
 #include "engine/debug/debug_draw.h"
