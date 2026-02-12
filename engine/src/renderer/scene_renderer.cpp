@@ -27,6 +27,14 @@ struct PLUniformNames {
 };
 static std::array<PLUniformNames, Engine::MAX_POINT_LIGHTS> s_PLUniforms;
 
+// ── 预缓存聚光灯 Uniform 名称 ─────────────────────
+struct SLUniformNames {
+    std::string Pos, Dir, Color, Intensity;
+    std::string InnerCut, OuterCut;
+    std::string Constant, Linear, Quadratic;
+};
+static std::array<SLUniformNames, Engine::MAX_SPOT_LIGHTS> s_SLUniforms;
+
 namespace Engine {
 
 // ── 静态成员定义 ────────────────────────────────────────────
@@ -95,6 +103,20 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
         s_PLUniforms[i].Pos       = "uPLPos[" + idx + "]";
         s_PLUniforms[i].Color     = "uPLColor[" + idx + "]";
         s_PLUniforms[i].Intensity = "uPLIntensity[" + idx + "]";
+    }
+
+    // 预缓存聚光灯 Uniform 名称
+    for (int i = 0; i < MAX_SPOT_LIGHTS; i++) {
+        std::string idx = std::to_string(i);
+        s_SLUniforms[i].Pos       = "uSLPos[" + idx + "]";
+        s_SLUniforms[i].Dir       = "uSLDir[" + idx + "]";
+        s_SLUniforms[i].Color     = "uSLColor[" + idx + "]";
+        s_SLUniforms[i].Intensity = "uSLIntensity[" + idx + "]";
+        s_SLUniforms[i].InnerCut  = "uSLInnerCut[" + idx + "]";
+        s_SLUniforms[i].OuterCut  = "uSLOuterCut[" + idx + "]";
+        s_SLUniforms[i].Constant  = "uSLConstant[" + idx + "]";
+        s_SLUniforms[i].Linear    = "uSLLinear[" + idx + "]";
+        s_SLUniforms[i].Quadratic = "uSLQuadratic[" + idx + "]";
     }
 
     // 后处理 + Bloom
@@ -191,6 +213,21 @@ void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
         s_LitShader->SetFloat(s_PLUniforms[i].Intensity, pls[i].Intensity);
     }
 
+    // 聚光灯 Uniform
+    auto& sls = scene.GetSpotLights();
+    s_LitShader->SetInt("uSLCount", (int)sls.size());
+    for (int i = 0; i < (int)sls.size() && i < MAX_SPOT_LIGHTS; i++) {
+        s_LitShader->SetVec3(s_SLUniforms[i].Pos, sls[i].Position.x, sls[i].Position.y, sls[i].Position.z);
+        s_LitShader->SetVec3(s_SLUniforms[i].Dir, sls[i].Direction.x, sls[i].Direction.y, sls[i].Direction.z);
+        s_LitShader->SetVec3(s_SLUniforms[i].Color, sls[i].Color.x, sls[i].Color.y, sls[i].Color.z);
+        s_LitShader->SetFloat(s_SLUniforms[i].Intensity, sls[i].Intensity);
+        s_LitShader->SetFloat(s_SLUniforms[i].InnerCut, cosf(glm::radians(sls[i].InnerCutoff)));
+        s_LitShader->SetFloat(s_SLUniforms[i].OuterCut, cosf(glm::radians(sls[i].OuterCutoff)));
+        s_LitShader->SetFloat(s_SLUniforms[i].Constant, sls[i].Constant);
+        s_LitShader->SetFloat(s_SLUniforms[i].Linear, sls[i].Linear);
+        s_LitShader->SetFloat(s_SLUniforms[i].Quadratic, sls[i].Quadratic);
+    }
+
     // 遍历实体
     for (auto e : world.GetEntities()) {
         auto* tr = world.GetComponent<TransformComponent>(e);
@@ -268,6 +305,19 @@ void SceneRenderer::RenderLightGizmos(Scene& scene, PerspectiveCamera& camera) {
             pl.Color.x * pl.Intensity,
             pl.Color.y * pl.Intensity,
             pl.Color.z * pl.Intensity);
+        cubeMesh->Draw();
+    }
+
+    // 聚光灯 Gizmo
+    auto& sls = scene.GetSpotLights();
+    for (auto& sl : sls) {
+        glm::mat4 m = glm::translate(glm::mat4(1.0f), sl.Position);
+        m = glm::scale(m, glm::vec3(0.15f));
+        s_EmissiveShader->SetMat4("uModel", glm::value_ptr(m));
+        s_EmissiveShader->SetVec3("uColor",
+            sl.Color.x * sl.Intensity,
+            sl.Color.y * sl.Intensity,
+            sl.Color.z * sl.Intensity);
         cubeMesh->Draw();
     }
 }

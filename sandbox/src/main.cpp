@@ -101,6 +101,15 @@ static void BuildDemoScene(Engine::Scene& scene) {
     pl1.Position = {-2, 1.5f, -1}; pl1.Color = {0.3f, 1, 0.3f}; pl1.Intensity = 2.5f;
     auto& pl2 = scene.AddPointLight();
     pl2.Position = {0, 3.0f, 0}; pl2.Color = {0.4f, 0.4f, 1}; pl2.Intensity = 3.0f;
+
+    // 聚光灯 (纯数据)
+    auto& sl0 = scene.AddSpotLight();
+    sl0.Position  = {3, 6, 3};
+    sl0.Direction  = {-0.3f, -1.0f, -0.3f};
+    sl0.Color      = {1.0f, 0.95f, 0.8f};
+    sl0.Intensity  = 5.0f;
+    sl0.InnerCutoff = 10.0f;
+    sl0.OuterCutoff = 18.0f;
 }
 
 // ── 主程序 ──────────────────────────────────────────────────

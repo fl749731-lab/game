@@ -48,6 +48,18 @@ uniform vec3 uPLPos[MAX_PL];
 uniform vec3 uPLColor[MAX_PL];
 uniform float uPLIntensity[MAX_PL];
 
+#define MAX_SL 4
+uniform int uSLCount;
+uniform vec3  uSLPos[MAX_SL];
+uniform vec3  uSLDir[MAX_SL];
+uniform vec3  uSLColor[MAX_SL];
+uniform float uSLIntensity[MAX_SL];
+uniform float uSLInnerCut[MAX_SL];  // cos(inner cutoff)
+uniform float uSLOuterCut[MAX_SL];  // cos(outer cutoff)
+uniform float uSLConstant[MAX_SL];
+uniform float uSLLinear[MAX_SL];
+uniform float uSLQuadratic[MAX_SL];
+
 uniform vec3 uViewPos;
 uniform int uUseTex;
 uniform sampler2D uTex;
@@ -58,12 +70,14 @@ void main() {
     vec3 base = uMatDiffuse;
     if (uUseTex == 1) base = texture(uTex, vTexCoord).rgb;
 
+    // ── 方向光 ────────────────────────────────────────────
     vec3 L = normalize(-uDirLightDir);
     float diff = max(dot(N, L), 0.0);
     vec3 H = normalize(L + V);
     float spec = pow(max(dot(N, H), 0.0), uShininess);
     vec3 result = (0.15 * base + diff * base + spec * uMatSpecular) * uDirLightColor * 0.6;
 
+    // ── 点光 ──────────────────────────────────────────────
     for (int i = 0; i < uPLCount; i++) {
         vec3 pL = normalize(uPLPos[i] - vFragPos);
         float d = length(uPLPos[i] - vFragPos);
@@ -72,6 +86,26 @@ void main() {
         vec3 pH = normalize(pL + V);
         float pSpec = pow(max(dot(N, pH), 0.0), uShininess);
         result += (pDiff * base + pSpec * uMatSpecular) * uPLColor[i] * uPLIntensity[i] * att;
+    }
+
+    // ── 聚光灯 ────────────────────────────────────────────
+    for (int i = 0; i < uSLCount; i++) {
+        vec3 sL = normalize(uSLPos[i] - vFragPos);
+        float d = length(uSLPos[i] - vFragPos);
+
+        // 内外锥衰减
+        float theta = dot(sL, normalize(-uSLDir[i]));
+        float epsilon = uSLInnerCut[i] - uSLOuterCut[i];
+        float spotAtt = clamp((theta - uSLOuterCut[i]) / epsilon, 0.0, 1.0);
+
+        // 距离衰减
+        float att = 1.0 / (uSLConstant[i] + uSLLinear[i]*d + uSLQuadratic[i]*d*d);
+
+        float sDiff = max(dot(N, sL), 0.0);
+        vec3 sH = normalize(sL + V);
+        float sSpec = pow(max(dot(N, sH), 0.0), uShininess);
+
+        result += (sDiff * base + sSpec * uMatSpecular) * uSLColor[i] * uSLIntensity[i] * att * spotAtt;
     }
 
     FragColor = vec4(result, 1.0);
