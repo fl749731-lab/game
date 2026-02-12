@@ -11,6 +11,7 @@
 #include "engine/core/ecs.h"
 #include "engine/core/resource_manager.h"
 #include "engine/core/scene.h"
+#include "engine/core/scene_serializer.h"
 
 // Platform
 #include "engine/platform/window.h"
@@ -35,6 +36,7 @@
 #include "engine/renderer/shadow_map.h"
 #include "engine/renderer/frustum.h"
 #include "engine/renderer/screen_quad.h"
+#include "engine/renderer/sprite_batch.h"
 
 // Debug
 #include "engine/debug/debug_draw.h"

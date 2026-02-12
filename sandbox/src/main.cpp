@@ -129,6 +129,7 @@ int main() {
     Engine::Skybox::Init();
     Engine::ParticleSystem::Init();
     Engine::AudioEngine::Init();
+    Engine::SpriteBatch::Init();
 
     // 天空盒 (夜晚配色)
     Engine::Skybox::SetTopColor(0.02f, 0.02f, 0.12f);
@@ -195,7 +196,7 @@ int main() {
     fireEmitter.ColorEnd   = {1, 0.1f, 0};
     fireEmitter.EmitRate = 60;
 
-    LOG_INFO("按键: WASD 移动 | F1 线框 | F2 捕获 | F3/F4 曝光 | F5 调试线 | F6 调试UI | F7 分析器 | F8 Bloom | Z/X Zoom | Esc 退出");
+    LOG_INFO("按键: WASD 移动 | F1 线框 | F3/F4 曝光 | F5 调试线 | F6 调试UI | F7 分析器 | F8 Bloom | F9 保存场景 | F10 加载场景 | Esc 退出");
 
     // ═══════════════════════════════════════════════════════
     //  主循环：只有 输入 + 逻辑 + SceneRenderer::RenderScene
@@ -249,6 +250,23 @@ int main() {
         if (Engine::Input::IsKeyJustPressed(Engine::Key::F8)) {
             Engine::SceneRenderer::SetBloomEnabled(!Engine::SceneRenderer::GetBloomEnabled());
             LOG_INFO("[Bloom] %s", Engine::SceneRenderer::GetBloomEnabled() ? "开启" : "关闭");
+        }
+
+        // F9 保存场景
+        if (Engine::Input::IsKeyJustPressed(Engine::Key::F9)) {
+            if (Engine::SceneSerializer::Save(*scene, "scene.json"))
+                LOG_INFO("[Scene] 场景已保存到 scene.json");
+        }
+
+        // F10 加载场景
+        if (Engine::Input::IsKeyJustPressed(Engine::Key::F10)) {
+            auto loaded = Engine::SceneSerializer::Load("scene.json");
+            if (loaded) {
+                Engine::SceneManager::PopScene();
+                scene = loaded;
+                Engine::SceneManager::PushScene(scene);
+                LOG_INFO("[Scene] 场景已从 scene.json 加载 (%u 个实体)", scene->GetEntityCount());
+            }
         }
 
         // 窗口标题 FPS
@@ -358,6 +376,20 @@ int main() {
         // ═════════════════════════════════════════════════════
         Engine::SceneRenderer::RenderScene(*scene, camera);
 
+        // ── 2D SpriteBatch 渲染 (在 3D 之上) ────────────────
+        Engine::SpriteBatch::Begin(window.GetWidth(), window.GetHeight());
+        // 半透明 HUD 背景面板
+        Engine::SpriteBatch::DrawRect({10, 10}, {220, 50}, {0.0f, 0.0f, 0.0f, 0.5f});
+        // 小彩色方块作为指示灯
+        Engine::SpriteBatch::DrawRect({20, 20}, {12, 12}, {0.2f, 1.0f, 0.4f, 1.0f});
+        Engine::SpriteBatch::DrawRect({40, 20}, {12, 12}, {1.0f, 0.8f, 0.2f, 1.0f});
+        Engine::SpriteBatch::DrawRect({60, 20}, {12, 12}, {1.0f, 0.3f, 0.3f, 1.0f});
+        // 进度条背景 + 前景
+        Engine::SpriteBatch::DrawRect({20, 40}, {190, 10}, {0.3f, 0.3f, 0.3f, 0.8f});
+        float hpPct = 0.75f; // 示例血条 75%
+        Engine::SpriteBatch::DrawRect({20, 40}, {190 * hpPct, 10}, {0.2f, 0.9f, 0.3f, 0.9f});
+        Engine::SpriteBatch::End();
+
         // ── 调试 UI 叠加 (2D，在 SceneRenderer 之后) ────────
         {
             auto stats = Engine::Renderer::GetStats();
@@ -398,6 +430,7 @@ int main() {
 #endif
     Engine::DebugUI::Shutdown();
     Engine::DebugDraw::Shutdown();
+    Engine::SpriteBatch::Shutdown();
     Engine::ParticleSystem::Shutdown();
     Engine::AudioEngine::Shutdown();
     Engine::Skybox::Shutdown();
