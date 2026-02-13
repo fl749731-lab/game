@@ -5,6 +5,7 @@
 #include "engine/renderer/bloom.h"
 #include "engine/renderer/skybox.h"
 #include "engine/renderer/ssao.h"
+#include "engine/renderer/ssr.h"
 #include "engine/renderer/particle.h"
 #include "engine/renderer/texture.h"
 #include "engine/renderer/shadow_map.h"
@@ -144,6 +145,7 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
     Bloom::Init(config.Width, config.Height);
     ShadowMap::Init();
     SSAO::Init(config.Width, config.Height);
+    SSR::Init(config.Width, config.Height);
 
     LOG_INFO("[SceneRenderer] 初始化完成 (%ux%u) — 延迟渲染管线", s_Width, s_Height);
 }
@@ -160,6 +162,7 @@ void SceneRenderer::Shutdown() {
     Bloom::Shutdown();
     ShadowMap::Shutdown();
     SSAO::Shutdown();
+    SSR::Shutdown();
     PostProcess::Shutdown();
     LOG_DEBUG("[SceneRenderer] 已清理");
 }
@@ -171,6 +174,7 @@ void SceneRenderer::Resize(u32 width, u32 height) {
     GBuffer::Resize(width, height);
     Bloom::Resize(width, height);
     SSAO::Resize(width, height);
+    SSR::Resize(width, height);
 }
 
 // ── 核心渲染方法 ────────────────────────────────────────────
@@ -206,6 +210,33 @@ void SceneRenderer::RenderScene(Scene& scene, PerspectiveCamera& camera) {
     }
 
     LightingPass(scene, camera);
+
+    // SSR Pass (在 Lighting 之后，利用 HDR 结果)
+    if (SSR::IsEnabled()) {
+        SSR::Generate(
+            glm::value_ptr(camera.GetProjectionMatrix()),
+            glm::value_ptr(camera.GetViewMatrix()),
+            s_HDR_FBO->GetColorAttachmentID(0));
+
+        // 将 SSR 结果混合叠加到 HDR FBO
+        s_HDR_FBO->Bind();
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        // 绘制 SSR 反射纹理到 HDR buffer
+        auto ssrBlitShader = ResourceManager::GetShader("gbuf_debug");
+        if (ssrBlitShader) {
+            ssrBlitShader->Bind();
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, SSR::GetReflectionTexture());
+            ssrBlitShader->SetInt("gPosition", 0);
+            ssrBlitShader->SetInt("uDebugMode", -1);
+            ScreenQuad::Draw();
+        }
+
+        glDisable(GL_BLEND);
+    }
+
     ForwardPass(scene, camera);
 
     Profiler::EndTimer("Render");
