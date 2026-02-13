@@ -43,6 +43,7 @@ public:
 
     u32 GetVertexCount() const { return (u32)m_Vertices.size(); }
     u32 GetIndexCount() const { return m_IndexCount; }
+    u32 GetVAO() const { return m_VAO; }
 
 private:
     void SetupBuffers();
