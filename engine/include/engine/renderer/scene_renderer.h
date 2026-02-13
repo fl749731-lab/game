@@ -69,6 +69,7 @@ private:
     static Ref<Shader> s_EmissiveShader;   // 前向叠加
     static Ref<Shader> s_GBufDebugShader;  // 调试可视化
     static Ref<Shader> s_LitShader;        // 保留 (前向 fallback)
+    static Ref<Shader> s_BlitShader;       // 全屏纹理 blit (SSR 混合等)
 
     static u32 s_CheckerTexID;
 

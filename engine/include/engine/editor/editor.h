@@ -31,6 +31,7 @@ private:
     static void DrawSceneHierarchy(Scene& scene, Entity& selectedEntity);
     static void DrawInspector(ECSWorld& world, Entity entity);
     static void DrawLightEditor(Scene& scene);
+    static void DrawPerformance(Scene& scene);
 
     static bool s_Enabled;
 };

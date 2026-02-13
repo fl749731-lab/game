@@ -36,6 +36,11 @@ std::vector<GltfMesh> GltfLoader::Load(const std::string& filepath) {
         return results;
     }
 
+    // 提取基础目录 (用于纹理路径)
+    std::string baseDir = filepath;
+    auto lastSlash = baseDir.find_last_of("/\\");
+    baseDir = (lastSlash != std::string::npos) ? baseDir.substr(0, lastSlash + 1) : "";
+
     // 遍历所有 mesh
     for (cgltf_size mi = 0; mi < data->meshes_count; mi++) {
         const cgltf_mesh& mesh = data->meshes[mi];
@@ -52,12 +57,14 @@ std::vector<GltfMesh> GltfLoader::Load(const std::string& filepath) {
             const cgltf_accessor* posAccessor  = nullptr;
             const cgltf_accessor* normAccessor = nullptr;
             const cgltf_accessor* uvAccessor   = nullptr;
+            const cgltf_accessor* tanAccessor  = nullptr;
 
             for (cgltf_size ai = 0; ai < prim.attributes_count; ai++) {
                 const auto& attr = prim.attributes[ai];
                 if (attr.type == cgltf_attribute_type_position)  posAccessor  = attr.data;
                 if (attr.type == cgltf_attribute_type_normal)    normAccessor = attr.data;
                 if (attr.type == cgltf_attribute_type_texcoord)  uvAccessor   = attr.data;
+                if (attr.type == cgltf_attribute_type_tangent)   tanAccessor  = attr.data;
             }
 
             if (!posAccessor) continue;
@@ -91,6 +98,17 @@ std::vector<GltfMesh> GltfLoader::Load(const std::string& filepath) {
                 }
             }
 
+            // Tangent (vec4: xyz=tangent, w=handedness)
+            if (tanAccessor) {
+                const f32* src = (const f32*)AccessorData(tanAccessor);
+                for (cgltf_size v = 0; v < vertCount; v++) {
+                    glm::vec3 T = {src[v*4+0], src[v*4+1], src[v*4+2]};
+                    f32 w = src[v*4+3]; // handedness
+                    vertices[v].Tangent = T;
+                    vertices[v].Bitangent = glm::cross(vertices[v].Normal, T) * w;
+                }
+            }
+
             // Indices
             if (prim.indices) {
                 indices.resize(prim.indices->count);
@@ -101,6 +119,25 @@ std::vector<GltfMesh> GltfLoader::Load(const std::string& filepath) {
                 // 无索引 → 生成顺序索引
                 indices.resize(vertCount);
                 for (cgltf_size i = 0; i < vertCount; i++) indices[i] = (u32)i;
+            }
+
+            // 自动计算 Tangent（如果文件中没有提供）
+            if (!tanAccessor && uvAccessor) {
+                for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+                    auto& v0 = vertices[indices[i+0]];
+                    auto& v1 = vertices[indices[i+1]];
+                    auto& v2 = vertices[indices[i+2]];
+                    glm::vec3 e1 = v1.Position - v0.Position;
+                    glm::vec3 e2 = v2.Position - v0.Position;
+                    glm::vec2 dUV1 = v1.TexCoord - v0.TexCoord;
+                    glm::vec2 dUV2 = v2.TexCoord - v0.TexCoord;
+                    f32 f = 1.0f / (dUV1.x * dUV2.y - dUV2.x * dUV1.y + 0.0001f);
+                    glm::vec3 T = glm::normalize(f * (dUV2.y * e1 - dUV1.y * e2));
+                    glm::vec3 B = glm::normalize(f * (-dUV2.x * e1 + dUV1.x * e2));
+                    v0.Tangent = T; v0.Bitangent = B;
+                    v1.Tangent = T; v1.Bitangent = B;
+                    v2.Tangent = T; v2.Bitangent = B;
+                }
             }
 
             // 材质
@@ -115,14 +152,36 @@ std::vector<GltfMesh> GltfLoader::Load(const std::string& filepath) {
                                      pbr.base_color_factor[2], pbr.base_color_factor[3]};
                     mat.Metallic  = pbr.metallic_factor;
                     mat.Roughness = pbr.roughness_factor;
+
+                    // BaseColor 纹理路径
+                    if (pbr.base_color_texture.texture &&
+                        pbr.base_color_texture.texture->image &&
+                        pbr.base_color_texture.texture->image->uri) {
+                        mat.BaseColorTexPath = baseDir + pbr.base_color_texture.texture->image->uri;
+                    }
+
+                    // MetallicRoughness 纹理路径
+                    if (pbr.metallic_roughness_texture.texture &&
+                        pbr.metallic_roughness_texture.texture->image &&
+                        pbr.metallic_roughness_texture.texture->image->uri) {
+                        mat.MetallicRoughnessTexPath = baseDir + pbr.metallic_roughness_texture.texture->image->uri;
+                    }
                 }
 
-                if (gmat.has_emissive_strength) {
-                    mat.Emissive = gmat.emissive_strength.emissive_strength;
-                } else {
-                    // 回退到标准 emissive_factor 亮度
-                    f32 eFactor = gmat.emissive_factor[0] + gmat.emissive_factor[1] + gmat.emissive_factor[2];
-                    if (eFactor > 0.001f) mat.Emissive = eFactor / 3.0f;
+                // 法线贴图路径
+                if (gmat.normal_texture.texture &&
+                    gmat.normal_texture.texture->image &&
+                    gmat.normal_texture.texture->image->uri) {
+                    mat.NormalTexPath = baseDir + gmat.normal_texture.texture->image->uri;
+                }
+
+                // Emissive
+                f32 eFactor = gmat.emissive_factor[0] + gmat.emissive_factor[1] + gmat.emissive_factor[2];
+                if (eFactor > 0.001f) {
+                    mat.EmissiveColor = {gmat.emissive_factor[0], gmat.emissive_factor[1], gmat.emissive_factor[2]};
+                    mat.Emissive = (gmat.has_emissive_strength)
+                        ? gmat.emissive_strength.emissive_strength
+                        : 1.0f;
                 }
             }
 

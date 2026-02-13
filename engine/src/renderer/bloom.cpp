@@ -147,7 +147,7 @@ void Bloom::CreateFBOs(u32 width, u32 height) {
     if (bw == 0) bw = 1;
     if (bh == 0) bh = 1;
 
-    auto createFBO = [](u32& fbo, u32& tex, u32 w, u32 h) {
+    auto createFBO = [](u32& fbo, u32& tex, u32 w, u32 h, const char* name) {
         glGenFramebuffers(1, &fbo);
         glGenTextures(1, &tex);
         glBindTexture(GL_TEXTURE_2D, tex);
@@ -158,12 +158,15 @@ void Bloom::CreateFBOs(u32 width, u32 height) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            LOG_ERROR("[Bloom] FBO '%s' 不完整!", name);
+        }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     };
 
-    createFBO(s_BrightFBO, s_BrightTexture, bw, bh);
-    createFBO(s_PingFBO, s_PingTexture, bw, bh);
-    createFBO(s_PongFBO, s_PongTexture, bw, bh);
+    createFBO(s_BrightFBO, s_BrightTexture, bw, bh, "Bright");
+    createFBO(s_PingFBO, s_PingTexture, bw, bh, "Ping");
+    createFBO(s_PongFBO, s_PongTexture, bw, bh, "Pong");
 
     s_Width = width;
     s_Height = height;

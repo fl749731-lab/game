@@ -4,6 +4,7 @@
 #include "engine/renderer/shader.h"
 #include "engine/renderer/texture.h"
 #include "engine/renderer/mesh.h"
+#include "engine/renderer/gltf_loader.h"
 #include "engine/core/log.h"
 
 #include <string>
@@ -37,6 +38,10 @@ public:
     // ── 全局 ────────────────────────────────────────────────
     static void Clear();
     static void PrintStats();
+
+    // ── Model (glTF / OBJ) ──────────────────────────────────
+    /// 根据后缀自动选择加载器，返回模型名称列表
+    static std::vector<std::string> LoadModel(const std::string& filepath);
 
 private:
     static std::unordered_map<std::string, Ref<Shader>> s_Shaders;

@@ -142,8 +142,9 @@ void main() {
 
     // ── 点光 ──────────────────────────────────────────────
     for (int i = 0; i < uPLCount; i++) {
-        vec3 pL = normalize(uPLPos[i] - vFragPos);
-        float d = length(uPLPos[i] - vFragPos);
+        vec3 toLight = uPLPos[i] - vFragPos;
+        float d = length(toLight);
+        vec3 pL = toLight / max(d, 0.0001);
         float att = 1.0 / (uPLConstant[i] + uPLLinear[i]*d + uPLQuadratic[i]*d*d);
         float pDiff = max(dot(N, pL), 0.0);
         vec3 pH = normalize(pL + V);
@@ -153,8 +154,9 @@ void main() {
 
     // ── 聚光灯 ────────────────────────────────────────────
     for (int i = 0; i < uSLCount; i++) {
-        vec3 sL = normalize(uSLPos[i] - vFragPos);
-        float d = length(uSLPos[i] - vFragPos);
+        vec3 toLight = uSLPos[i] - vFragPos;
+        float d = length(toLight);
+        vec3 sL = toLight / max(d, 0.0001);
 
         // 内外锥衰减
         float theta = dot(sL, normalize(-uSLDir[i]));
@@ -345,6 +347,10 @@ uniform mat4  uLightSpaceMat;
 uniform vec3  uViewPos;
 uniform float uAmbientStrength;
 
+// SSAO
+uniform sampler2D uSSAO;
+uniform int uSSAOEnabled;
+
 // ── PBR 常量 ─────────────────────────────────────────
 const float PI = 3.14159265359;
 
@@ -421,10 +427,12 @@ void main() {
     // 从 G-Buffer 采样
     vec3  FragPos   = texture(gPosition,   vTexCoord).rgb;
     vec3  Normal    = texture(gNormal,     vTexCoord).rgb;
-    vec3  Albedo    = texture(gAlbedoSpec, vTexCoord).rgb;
-    float Metallic  = texture(gAlbedoSpec, vTexCoord).a;
-    vec3  Emissive  = texture(gEmissive,   vTexCoord).rgb;
-    float Roughness = texture(gEmissive,   vTexCoord).a;
+    vec4  albedoSample  = texture(gAlbedoSpec, vTexCoord);
+    vec4  emissiveSample = texture(gEmissive,  vTexCoord);
+    vec3  Albedo    = albedoSample.rgb;
+    float Metallic  = albedoSample.a;
+    vec3  Emissive  = emissiveSample.rgb;
+    float Roughness = emissiveSample.a;
 
     // 限制粗糙度最小值避免高光爆炸
     Roughness = max(Roughness, 0.04);
@@ -448,8 +456,9 @@ void main() {
         shadow = CalcShadow(FragPos, N, L);
     }
 
-    // ── 环境光（简化 IBL：常量环境） ─────────────
-    vec3 ambient = uAmbientStrength * Albedo;
+    // ── 环境光（简化 IBL：常量环境 × AO） ─────────
+    float ao = (uSSAOEnabled == 1) ? texture(uSSAO, vTexCoord).r : 1.0;
+    vec3 ambient = uAmbientStrength * Albedo * ao;
 
     // ── 方向光 PBR ──────────────────────────────
     vec3 result = ambient;
@@ -458,8 +467,9 @@ void main() {
 
     // ── 点光源 PBR ──────────────────────────────
     for (int i = 0; i < uPLCount; i++) {
-        vec3 pL = normalize(uPLPos[i] - FragPos);
-        float d = length(uPLPos[i] - FragPos);
+        vec3 toLight = uPLPos[i] - FragPos;
+        float d = length(toLight);
+        vec3 pL = toLight / max(d, 0.0001);
         float att = 1.0 / (uPLConstant[i] + uPLLinear[i]*d + uPLQuadratic[i]*d*d);
         vec3 radiance = uPLColor[i] * uPLIntensity[i] * att;
         result += CalcPBRLight(pL, radiance, N, V, Albedo, Metallic, Roughness, F0);
@@ -467,8 +477,9 @@ void main() {
 
     // ── 聚光灯 PBR ──────────────────────────────
     for (int i = 0; i < uSLCount; i++) {
-        vec3 sL = normalize(uSLPos[i] - FragPos);
-        float d = length(uSLPos[i] - FragPos);
+        vec3 toLight = uSLPos[i] - FragPos;
+        float d = length(toLight);
+        vec3 sL = toLight / max(d, 0.0001);
         float theta = dot(sL, normalize(-uSLDir[i]));
         float epsilon = max(uSLInnerCut[i] - uSLOuterCut[i], 0.001);
         float spotAtt = clamp((theta - uSLOuterCut[i]) / epsilon, 0.0, 1.0);
@@ -526,6 +537,31 @@ void main() {
         color = texture(gEmissive, vTexCoord).rgb; // Emissive
     }
     FragColor = vec4(color, 1.0);
+}
+)";
+
+// ── 全屏纹理 Blit Shader (用于 SSR 混合等) ─────────────────
+
+inline const char* BlitTextureVertex = R"(
+#version 450 core
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec2 aTexCoord;
+out vec2 vTexCoord;
+void main() {
+    vTexCoord = aTexCoord;
+    gl_Position = vec4(aPos, 1.0);
+}
+)";
+
+inline const char* BlitTextureFragment = R"(
+#version 450 core
+out vec4 FragColor;
+in vec2 vTexCoord;
+
+uniform sampler2D uTexture;
+
+void main() {
+    FragColor = texture(uTexture, vTexCoord);
 }
 )";
 

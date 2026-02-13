@@ -4,6 +4,8 @@
 #include "engine/renderer/post_process.h"
 #include "engine/renderer/bloom.h"
 #include "engine/renderer/skybox.h"
+#include "engine/renderer/ssao.h"
+#include "engine/renderer/ssr.h"
 #include "engine/renderer/particle.h"
 #include "engine/renderer/texture.h"
 #include "engine/renderer/shadow_map.h"
@@ -49,6 +51,7 @@ Ref<Shader> SceneRenderer::s_DeferredShader = nullptr;
 Ref<Shader> SceneRenderer::s_EmissiveShader = nullptr;
 Ref<Shader> SceneRenderer::s_GBufDebugShader = nullptr;
 Ref<Shader> SceneRenderer::s_LitShader     = nullptr;
+Ref<Shader> SceneRenderer::s_BlitShader    = nullptr;
 u32  SceneRenderer::s_CheckerTexID = 0;
 u32  SceneRenderer::s_Width = 0;
 u32  SceneRenderer::s_Height = 0;
@@ -85,6 +88,8 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
         Shaders::EmissiveVertex, Shaders::EmissiveFragment);
     s_LitShader = ResourceManager::LoadShader("lit",
         Shaders::LitVertex, Shaders::LitFragment);
+    s_BlitShader = ResourceManager::LoadShader("blit",
+        Shaders::BlitTextureVertex, Shaders::BlitTextureFragment);
 
     // 基础网格
     if (!ResourceManager::GetMesh("cube"))
@@ -142,6 +147,8 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
     PostProcess::SetExposure(s_Exposure);
     Bloom::Init(config.Width, config.Height);
     ShadowMap::Init();
+    SSAO::Init(config.Width, config.Height);
+    SSR::Init(config.Width, config.Height);
 
     LOG_INFO("[SceneRenderer] 初始化完成 (%ux%u) — 延迟渲染管线", s_Width, s_Height);
 }
@@ -155,8 +162,11 @@ void SceneRenderer::Shutdown() {
     s_EmissiveShader.reset();
     s_GBufDebugShader.reset();
     s_LitShader.reset();
+    s_BlitShader.reset();
     Bloom::Shutdown();
     ShadowMap::Shutdown();
+    SSAO::Shutdown();
+    SSR::Shutdown();
     PostProcess::Shutdown();
     LOG_DEBUG("[SceneRenderer] 已清理");
 }
@@ -167,6 +177,8 @@ void SceneRenderer::Resize(u32 width, u32 height) {
     if (s_HDR_FBO) s_HDR_FBO->Resize(width, height);
     GBuffer::Resize(width, height);
     Bloom::Resize(width, height);
+    SSAO::Resize(width, height);
+    SSR::Resize(width, height);
 }
 
 // ── 核心渲染方法 ────────────────────────────────────────────
@@ -196,7 +208,37 @@ void SceneRenderer::RenderScene(Scene& scene, PerspectiveCamera& camera) {
         return;
     }
 
+    // SSAO Pass (在 Geometry 和 Lighting 之间)
+    if (SSAO::IsEnabled()) {
+        SSAO::Generate(glm::value_ptr(camera.GetProjectionMatrix()));
+    }
+
     LightingPass(scene, camera);
+
+    // SSR Pass (在 Lighting 之后，利用 HDR 结果)
+    if (SSR::IsEnabled()) {
+        SSR::Generate(
+            glm::value_ptr(camera.GetProjectionMatrix()),
+            glm::value_ptr(camera.GetViewMatrix()),
+            s_HDR_FBO->GetColorAttachmentID(0));
+
+        // 将 SSR 结果混合叠加到 HDR FBO
+        s_HDR_FBO->Bind();
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);  // 不写深度
+
+        // 使用专用 Blit Shader 绘制 SSR 反射纹理
+        s_BlitShader->Bind();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, SSR::GetReflectionTexture());
+        s_BlitShader->SetInt("uTexture", 0);
+        ScreenQuad::Draw();
+
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+    }
+
     ForwardPass(scene, camera);
 
     Profiler::EndTimer("Render");
@@ -258,20 +300,34 @@ void SceneRenderer::LightingPass(Scene& scene, PerspectiveCamera& camera) {
     s_DeferredShader->SetInt("gAlbedoSpec", 2);
     s_DeferredShader->SetInt("gEmissive", 3);
 
+    // SSAO 纹理 (纹理单元 5)
+    if (SSAO::IsEnabled()) {
+        glActiveTexture(GL_TEXTURE0 + 5);
+        glBindTexture(GL_TEXTURE_2D, SSAO::GetOcclusionTexture());
+        s_DeferredShader->SetInt("uSSAO", 5);
+        s_DeferredShader->SetInt("uSSAOEnabled", 1);
+    } else {
+        s_DeferredShader->SetInt("uSSAOEnabled", 0);
+    }
+
     // 设置光照 Uniform
     SetupLightUniforms(scene, s_DeferredShader.get(), camera);
 
     // 绘制全屏四边形
     ScreenQuad::Draw();
 
-    // 不要 Unbind HDR FBO — 前向 Pass 会继续写入
+    // 将 G-Buffer 深度纹理附加到 HDR FBO (供前向 Pass 深度遮挡)
+    // 这避免了 glBlitFramebuffer (自定义 GLAD 未导出)
+    glBindFramebuffer(GL_FRAMEBUFFER, s_HDR_FBO->GetFBO());
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                           GL_TEXTURE_2D, GBuffer::GetDepthTexture(), 0);
 }
 
 // ── Pass 3: 前向叠加 (天空盒/透明物/自发光/粒子/调试) ────
 
 void SceneRenderer::ForwardPass(Scene& scene, PerspectiveCamera& camera) {
     // 直接在 HDR FBO 上继续绘制（光照 Pass 已经绑定了 HDR FBO）
-    // 前向叠加 Pass 不需要深度测试（天空盒在最远处，粒子/调试线也不需要严格深度遮挡）
+    // 前向叠加 Pass: 复用 G-Buffer 深度进行深度测试 (天空盒/粒子/调试线)
     Renderer::SetViewport(0, 0, s_Width, s_Height);
 
 
@@ -334,7 +390,9 @@ void SceneRenderer::PostProcessPass() {
     Renderer::Clear();
 
     if (s_BloomEnabled) {
+        Profiler::BeginTimer("Bloom");
         u32 bloomTex = Bloom::Process(s_HDR_FBO->GetColorAttachmentID());
+        Profiler::EndTimer("Bloom");
         PostProcess::Draw(s_HDR_FBO->GetColorAttachmentID(),
                           bloomTex, Bloom::GetIntensity());
     } else {
