@@ -6,9 +6,14 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# MinGW 静态链接运行时，避免 DLL 依赖
+# ── 平台 / 编译器 特定设置 ──────────────────────────────────
 if(MINGW)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+elseif(MSVC)
+    # MSVC: 高警告等级 + UTF-8 源码
+    add_compile_options(/W4 /utf-8)
+    # 禁用烦人的安全警告
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 endif()
 
 # ── 第三方依赖 ──────────────────────────────────────────────
@@ -48,3 +53,11 @@ add_subdirectory(engine)
 # ── 沙盒测试应用 ────────────────────────────────────────────
 
 add_subdirectory(sandbox)
+
+# ── 单元测试 (可选) ─────────────────────────────────────────
+
+option(BUILD_TESTS "构建单元测试" OFF)
+if(BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

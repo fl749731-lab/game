@@ -1,0 +1,57 @@
+name: Build Engine
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            generator: "Visual Studio 17 2022"
+            build_type: Release
+          - os: ubuntu-latest
+            generator: "Unix Makefiles"
+            build_type: Release
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Linux: 安装 OpenGL / X11 开发依赖
+      - name: Install Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1-mesa-dev \
+            libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libxext-dev \
+            libwayland-dev libxkbcommon-dev
+
+      - name: Configure CMake
+        run: >
+          cmake -B build
+          -G "${{ matrix.generator }}"
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }}
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.os }}
+          path: |
+            build/sandbox/Release/*
+            build/sandbox/Sandbox*
+          if-no-files-found: ignore

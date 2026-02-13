@@ -33,6 +33,20 @@ target_include_directories(Engine
         $<$<BOOL:${Python3_FOUND}>:${Python3_INCLUDE_DIRS}>
 )
 
+# ── 跨平台 OpenGL 链接 ─────────────────────────────────────
+if(WIN32)
+    set(OPENGL_LIBS opengl32)
+elseif(APPLE)
+    find_library(COCOA_LIBRARY Cocoa REQUIRED)
+    find_library(IOKIT_LIBRARY IOKit REQUIRED)
+    find_library(OPENGL_LIBRARY OpenGL REQUIRED)
+    set(OPENGL_LIBS ${OPENGL_LIBRARY} ${COCOA_LIBRARY} ${IOKIT_LIBRARY})
+else()
+    # Linux
+    find_package(OpenGL REQUIRED)
+    set(OPENGL_LIBS OpenGL::GL)
+endif()
+
 target_link_libraries(Engine
     PUBLIC
         glfw
@@ -40,7 +54,7 @@ target_link_libraries(Engine
         imgui
         glm::glm
     PRIVATE
-        opengl32  # Windows OpenGL
+        ${OPENGL_LIBS}
         $<$<BOOL:${Python3_FOUND}>:${Python3_LIBRARIES}>
 )
 
@@ -48,5 +62,7 @@ target_link_libraries(Engine
 target_compile_definitions(Engine
     PUBLIC
         $<$<CONFIG:Debug>:ENGINE_DEBUG>
-        ENGINE_PLATFORM_WINDOWS
+        $<$<PLATFORM_ID:Windows>:ENGINE_PLATFORM_WINDOWS>
+        $<$<PLATFORM_ID:Linux>:ENGINE_PLATFORM_LINUX>
+        $<$<PLATFORM_ID:Darwin>:ENGINE_PLATFORM_MACOS>
 )
