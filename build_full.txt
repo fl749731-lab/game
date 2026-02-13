@@ -1,0 +1,8 @@
+[  2%] Built target glad
+[ 33%] Built target glfw
+[ 43%] Built target imgui
+[ 46%] Built target glm
+[ 97%] Built target Engine
+[ 98%] Building CXX object sandbox/CMakeFiles/Sandbox.dir/src/main.cpp.obj
+[100%] Linking CXX executable Sandbox.exe
+[100%] Built target Sandbox

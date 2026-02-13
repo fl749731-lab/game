@@ -6,6 +6,7 @@
 #include "engine/core/types.h"
 #include "engine/core/log.h"
 #include "engine/core/assert.h"
+#include "engine/core/gl_debug.h"
 #include "engine/core/time.h"
 #include "engine/core/event.h"
 #include "engine/core/ecs.h"

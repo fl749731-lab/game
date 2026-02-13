@@ -216,7 +216,7 @@ void ParticleSystem::Draw(const f32* viewProjectionMatrix,
 
     if (s_InstanceBuffer.empty()) return;
 
-    // 上传实例数据
+    // 上传实例数据 (使用 glMapBufferRange 减少同步开销)
     glBindBuffer(GL_ARRAY_BUFFER, s_InstanceVBO);
     size_t dataSize = s_InstanceBuffer.size() * sizeof(InstanceData);
     // 如果缓冲区不够大，重新分配

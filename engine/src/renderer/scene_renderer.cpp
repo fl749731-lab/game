@@ -334,7 +334,9 @@ void SceneRenderer::PostProcessPass() {
     Renderer::Clear();
 
     if (s_BloomEnabled) {
+        Profiler::BeginTimer("Bloom");
         u32 bloomTex = Bloom::Process(s_HDR_FBO->GetColorAttachmentID());
+        Profiler::EndTimer("Bloom");
         PostProcess::Draw(s_HDR_FBO->GetColorAttachmentID(),
                           bloomTex, Bloom::GetIntensity());
     } else {

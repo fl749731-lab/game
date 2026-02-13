@@ -1,0 +1,99 @@
+[  2%] Built target glad
+[ 33%] Built target glfw
+[ 43%] Built target imgui
+[ 46%] Built target glm
+[ 47%] Building CXX object engine/CMakeFiles/Engine.dir/src/renderer/particle.cpp.obj
+cmake : E:\game\engi
+ne\src\renderer\part
+icle.cpp: In static 
+member function 'sta
+tic void Engine::Par
+ticleSystem::Draw(co
+nst Engine::f32*, co
+nst glm::vec3&, cons
+t glm::vec3&)':
+???? ?:1 ??: 1
++ cmake --build buil
+d 2>&1 | Out-File E:
+\game\build_full.txt
+ -Encoding  ...
++ ~~~~~~~~~~~~~~~~~~
+~~~~~~
+    + CategoryInfo  
+            : NotS  
+  pecified: (E:\g   
+ ame\engine\...t    
+ glm::vec3&)'::    S
+tring) [], Rem    ot
+eException
+    + FullyQualifie 
+   dErrorId : Nati  
+  veCommandError
+ 
+E:\game\engine\src\r
+enderer\particle.cpp
+:229:13: error: 'GL_
+MAP_WRITE_BIT' was n
+ot declared in this 
+scope
+  229 |             
+GL_MAP_WRITE_BIT | G
+L_MAP_INVALIDATE_BUF
+FER_BIT);
+      |             
+^~~~~~~~~~~~~~~~
+E:\game\engine\src\r
+enderer\particle.cpp
+:229:32: error: 'GL_
+MAP_INVALIDATE_BUFFE
+R_BIT' was not decla
+red in this scope
+  229 |             
+GL_MAP_WRITE_BIT | G
+L_MAP_INVALIDATE_BUF
+FER_BIT);
+      |             
+                   ^
+~~~~~~~~~~~~~~~~~~~~
+~~~~~~~
+E:\game\engine\src\r
+enderer\particle.cpp
+:228:21: error: 'glM
+apBufferRange' was n
+ot declared in this 
+scope
+  228 |         void
+* ptr = glMapBufferR
+ange(GL_ARRAY_BUFFER
+, 0, (GLsizeiptr)dat
+aSize,
+      |             
+        ^~~~~~~~~~~~
+~~~~
+E:\game\engine\src\r
+enderer\particle.cpp
+:232:13: error: 'glU
+nmapBuffer' was not 
+declared in this sco
+pe
+  232 |             
+glUnmapBuffer(GL_ARR
+AY_BUFFER);
+      |             
+^~~~~~~~~~~~~
+mingw32-make[2]: ***
+ [engine\CMakeFiles\
+Engine.dir\build.mak
+e:454: engine/CMakeF
+iles/Engine.dir/src/
+renderer/particle.cp
+p.obj] Error 1
+mingw32-make[1]: ***
+ [CMakeFiles\Makefil
+e2:383: engine/CMake
+Files/Engine.dir/all
+] Error 2
+mingw32-make: *** [M
+akefile:90: all] Err
+or 2
+
