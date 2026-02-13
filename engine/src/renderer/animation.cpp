@@ -113,8 +113,12 @@ void AnimationSampler::Sample(const AnimationClip& clip, f32 time,
 // ── AnimationSystem ─────────────────────────────────────────
 
 void AnimationSystem::Update(ECSWorld& world, f32 dt) {
-    world.ForEach<AnimatorComponent>([&](Entity e, AnimatorComponent& anim) {
-        if (!anim.Playing || !anim.SkeletonRef) return;
+    auto& pool = world.GetComponentArray<AnimatorComponent>();
+    u32 count = pool.Size();
+
+    for (u32 i = 0; i < count; i++) {
+        AnimatorComponent& anim = pool.Data(i);
+        if (!anim.Playing || !anim.SkeletonRef) continue;
 
         // 查找当前动画
         AnimationClip* clip = nullptr;
@@ -124,7 +128,7 @@ void AnimationSystem::Update(ECSWorld& world, f32 dt) {
                 break;
             }
         }
-        if (!clip || clip->Duration <= 0.0f) return;
+        if (!clip || clip->Duration <= 0.0f) continue;
 
         // 时间推进
         anim.CurrentTime += dt * anim.PlaybackSpeed;
@@ -143,7 +147,7 @@ void AnimationSystem::Update(ECSWorld& world, f32 dt) {
 
         // 计算最终骨骼矩阵
         anim.SkeletonRef->ComputeBoneMatrices(anim.BoneMatrices);
-    });
+    }
 }
 
 } // namespace Engine

@@ -3,6 +3,7 @@
 #include "engine/core/log.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace Engine {
 
@@ -21,14 +22,19 @@ void PhysicsWorld::Step(ECSWorld& world, f32 dt) {
     ResolveGroundCollisions(world);
 }
 
-// ── 力积分 ──────────────────────────────────────────────────
+// ── 力积分（SoA 直接遍历）──────────────────────────────────
 
 void PhysicsWorld::IntegrateForces(ECSWorld& world, f32 dt) {
-    world.ForEach<RigidBodyComponent>([&](Entity e, RigidBodyComponent& rb) {
-        if (rb.IsStatic) return;
+    auto& rbPool = world.GetComponentArray<RigidBodyComponent>();
+    u32 count = rbPool.Size();
 
+    for (u32 i = 0; i < count; i++) {
+        RigidBodyComponent& rb = rbPool.Data(i);
+        if (rb.IsStatic) continue;
+
+        Entity e = rbPool.GetEntity(i);
         auto* tr = world.GetComponent<TransformComponent>(e);
-        if (!tr) return;
+        if (!tr) continue;
 
         // 重力
         if (rb.UseGravity) {
@@ -38,36 +44,54 @@ void PhysicsWorld::IntegrateForces(ECSWorld& world, f32 dt) {
         // 加速度（含外部施加的力）
         rb.Velocity += rb.Acceleration * dt;
 
+        // 阻尼（空气阻力 / 线性拖拽）
+        rb.Velocity *= (1.0f - rb.LinearDamping * dt);
+
         // 半隐式 Euler: 先更新速度再更新位置（更稳定）
         tr->X += rb.Velocity.x * dt;
         tr->Y += rb.Velocity.y * dt;
         tr->Z += rb.Velocity.z * dt;
 
+        // 角速度积分
+        if (glm::length(rb.AngularVelocity) > 1e-6f) {
+            tr->RotX += glm::degrees(rb.AngularVelocity.x) * dt;
+            tr->RotY += glm::degrees(rb.AngularVelocity.y) * dt;
+            tr->RotZ += glm::degrees(rb.AngularVelocity.z) * dt;
+            // 角速度阻尼
+            rb.AngularVelocity *= (1.0f - rb.AngularDamping * dt);
+        }
+
         // 每帧清零加速度（力需要每帧重新施加）
         rb.Acceleration = {0, 0, 0};
-    });
+    }
 }
 
-// ── 碰撞检测 ────────────────────────────────────────────────
+// ── 碰撞检测（SoA + SpatialHash）──────────────────────────
 
 void PhysicsWorld::DetectCollisions(ECSWorld& world) {
     s_Pairs.clear();
 
-    // 收集所有有碰撞体的实体
+    // 从 SoA 数组直接收集碰撞数据
+    auto& colPool = world.GetComponentArray<ColliderComponent>();
+    u32 colCount = colPool.Size();
+
     struct ColEntity {
         Entity e;
         AABB worldAABB;
         bool isTrigger;
     };
     std::vector<ColEntity> entities;
+    entities.reserve(colCount);
 
-    world.ForEach<ColliderComponent>([&](Entity e, ColliderComponent& col) {
+    for (u32 i = 0; i < colCount; i++) {
+        ColliderComponent& col = colPool.Data(i);
+        Entity e = colPool.GetEntity(i);
         auto* tr = world.GetComponent<TransformComponent>(e);
-        if (!tr) return;
+        if (!tr) continue;
         entities.push_back({e, col.GetWorldAABB(*tr), col.IsTrigger});
-    });
+    }
 
-    // 小规模用暴力检测（<= 32 实体时 O(n²) 更快，避免哈希开销）
+    // 窄相检测 lambda
     auto narrowPhase = [&](size_t i, size_t j) {
         glm::vec3 normal;
         f32 penetration;
@@ -116,14 +140,14 @@ void PhysicsWorld::DetectCollisions(ECSWorld& world) {
     }
 }
 
-// ── 碰撞响应 ────────────────────────────────────────────────
+// ── 碰撞响应（正确的基于质量的冲量模型）──────────────────
 
 void PhysicsWorld::ResolveCollisions(ECSWorld& world) {
     for (auto& pair : s_Pairs) {
         auto* colA = world.GetComponent<ColliderComponent>(pair.EntityA);
         auto* colB = world.GetComponent<ColliderComponent>(pair.EntityB);
         if (!colA || !colB) continue;
-        if (colA->IsTrigger || colB->IsTrigger) continue; // Trigger 不碰撞
+        if (colA->IsTrigger || colB->IsTrigger) continue;
 
         auto* rbA = world.GetComponent<RigidBodyComponent>(pair.EntityA);
         auto* rbB = world.GetComponent<RigidBodyComponent>(pair.EntityB);
@@ -133,87 +157,131 @@ void PhysicsWorld::ResolveCollisions(ECSWorld& world) {
         bool staticA = (!rbA || rbA->IsStatic);
         bool staticB = (!rbB || rbB->IsStatic);
 
-        if (staticA && staticB) continue; // 两个都是静态
+        if (staticA && staticB) continue;
 
-        // 分离
-        if (staticA && trB) {
-            trB->X += pair.Normal.x * pair.Penetration;
-            trB->Y += pair.Normal.y * pair.Penetration;
-            trB->Z += pair.Normal.z * pair.Penetration;
-        } else if (staticB && trA) {
-            trA->X -= pair.Normal.x * pair.Penetration;
-            trA->Y -= pair.Normal.y * pair.Penetration;
-            trA->Z -= pair.Normal.z * pair.Penetration;
-        } else if (trA && trB) {
-            f32 half = pair.Penetration * 0.5f;
-            trA->X -= pair.Normal.x * half;
-            trA->Y -= pair.Normal.y * half;
-            trA->Z -= pair.Normal.z * half;
-            trB->X += pair.Normal.x * half;
-            trB->Y += pair.Normal.y * half;
-            trB->Z += pair.Normal.z * half;
+        // ── 位置分离（按质量比例分配）──────────────────
+        f32 massA = staticA ? 0.0f : rbA->Mass;
+        f32 massB = staticB ? 0.0f : rbB->Mass;
+        f32 totalInvMass = (massA > 0 ? 1.0f/massA : 0.0f) 
+                         + (massB > 0 ? 1.0f/massB : 0.0f);
+
+        if (totalInvMass > 0) {
+            f32 invMassA = massA > 0 ? 1.0f/massA : 0.0f;
+            f32 invMassB = massB > 0 ? 1.0f/massB : 0.0f;
+            // 分离量按逆质量比分配（重的物体移动少）
+            glm::vec3 correction = pair.Normal * pair.Penetration / totalInvMass;
+
+            if (trA && !staticA) {
+                trA->X -= correction.x * invMassA;
+                trA->Y -= correction.y * invMassA;
+                trA->Z -= correction.z * invMassA;
+            }
+            if (trB && !staticB) {
+                trB->X += correction.x * invMassB;
+                trB->Y += correction.y * invMassB;
+                trB->Z += correction.z * invMassB;
+            }
         }
 
-        // 速度反弹
+        // ── 冲量速度解算（基于动量守恒 + 恢复系数）────
+        glm::vec3 velA = staticA ? glm::vec3(0) : rbA->Velocity;
+        glm::vec3 velB = staticB ? glm::vec3(0) : rbB->Velocity;
+        glm::vec3 relVel = velA - velB;  // A 相对 B 的速度
+        f32 velAlongNormal = glm::dot(relVel, pair.Normal);
+
+        // 正在分离则不处理
+        if (velAlongNormal > 0) continue;
+
+        // 恢复系数取二者最小值
         f32 restitution = 0.3f;
-        if (rbA && !rbA->IsStatic) {
-            restitution = rbA->Restitution;
-            f32 vn = glm::dot(rbA->Velocity, -pair.Normal);
-            if (vn > 0) {
-                rbA->Velocity += -pair.Normal * vn * (1.0f + restitution);
-            }
-        }
-        if (rbB && !rbB->IsStatic) {
-            restitution = rbB->Restitution;
-            f32 vn = glm::dot(rbB->Velocity, pair.Normal);
-            if (vn > 0) {
-                rbB->Velocity += pair.Normal * vn * (1.0f + restitution);
-            }
+        if (rbA && rbB)      restitution = std::min(rbA->Restitution, rbB->Restitution);
+        else if (rbA)        restitution = rbA->Restitution;
+        else if (rbB)        restitution = rbB->Restitution;
+
+        // 冲量标量: j = -(1 + e) * Vrel·n / (1/mA + 1/mB)
+        f32 j = -(1.0f + restitution) * velAlongNormal / totalInvMass;
+
+        // 法向冲量
+        glm::vec3 impulse = pair.Normal * j;
+        if (rbA && !rbA->IsStatic) rbA->Velocity += impulse / rbA->Mass;
+        if (rbB && !rbB->IsStatic) rbB->Velocity -= impulse / rbB->Mass;
+
+        // ── 摩擦冲量（切向）──────────────────────────
+        // 重新计算相对速度（冲量后）
+        velA = staticA ? glm::vec3(0) : rbA->Velocity;
+        velB = staticB ? glm::vec3(0) : rbB->Velocity;
+        relVel = velA - velB;
+        glm::vec3 tangent = relVel - pair.Normal * glm::dot(relVel, pair.Normal);
+        f32 tangentLen = glm::length(tangent);
+        if (tangentLen > 1e-6f) {
+            tangent /= tangentLen;
+            f32 jt = -glm::dot(relVel, tangent) / totalInvMass;
+            // 库仑摩擦：摩擦冲量不超过 μ * 法向冲量
+            f32 friction = 0.5f;
+            if (rbA) friction = rbA->Friction;
+            if (rbB) friction = std::min(friction, rbB->Friction);
+            f32 maxFriction = friction * std::abs(j);
+            jt = glm::clamp(jt, -maxFriction, maxFriction);
+
+            glm::vec3 frictionImpulse = tangent * jt;
+            if (rbA && !rbA->IsStatic) rbA->Velocity += frictionImpulse / rbA->Mass;
+            if (rbB && !rbB->IsStatic) rbB->Velocity -= frictionImpulse / rbB->Mass;
         }
     }
 }
 
-// ── 地面碰撞 ────────────────────────────────────────────────
+// ── 地面碰撞（SoA 直接遍历）────────────────────────────
 
 void PhysicsWorld::ResolveGroundCollisions(ECSWorld& world) {
-    world.ForEach<RigidBodyComponent>([&](Entity e, RigidBodyComponent& rb) {
-        if (rb.IsStatic) return;
-        auto* tr = world.GetComponent<TransformComponent>(e);
-        auto* col = world.GetComponent<ColliderComponent>(e);
-        if (!tr) return;
+    auto& rbPool = world.GetComponentArray<RigidBodyComponent>();
+    u32 count = rbPool.Size();
 
-        f32 groundY = s_GroundHeight;
+    for (u32 i = 0; i < count; i++) {
+        RigidBodyComponent& rb = rbPool.Data(i);
+        if (rb.IsStatic) continue;
+
+        Entity e = rbPool.GetEntity(i);
+        auto* tr = world.GetComponent<TransformComponent>(e);
+        if (!tr) continue;
+
+        auto* col = world.GetComponent<ColliderComponent>(e);
         f32 bottom = tr->Y;
         if (col) {
             bottom = tr->Y + col->LocalBounds.Min.y * tr->ScaleY;
         }
 
-        if (bottom < groundY) {
-            f32 penetration = groundY - bottom;
+        if (bottom < s_GroundHeight) {
+            f32 penetration = s_GroundHeight - bottom;
             tr->Y += penetration;
             if (rb.Velocity.y < 0) {
                 rb.Velocity.y = -rb.Velocity.y * rb.Restitution;
                 // 静止阈值
-                if (fabsf(rb.Velocity.y) < 0.1f) {
+                if (std::abs(rb.Velocity.y) < 0.1f) {
                     rb.Velocity.y = 0;
                 }
             }
-            // 摩擦
-            rb.Velocity.x *= (1.0f - rb.Friction * 0.1f);
-            rb.Velocity.z *= (1.0f - rb.Friction * 0.1f);
+            // 地面摩擦
+            f32 frictionDecay = 1.0f - rb.Friction * 0.1f;
+            rb.Velocity.x *= frictionDecay;
+            rb.Velocity.z *= frictionDecay;
         }
-    });
+    }
 }
 
-// ── 射线检测 ────────────────────────────────────────────────
+// ── 射线检测（SoA 直接遍历）────────────────────────────
 
 HitResult PhysicsWorld::Raycast(ECSWorld& world, const Ray& ray, Entity* outEntity) {
     HitResult closest;
     closest.Distance = 1e30f;
 
-    world.ForEach<ColliderComponent>([&](Entity e, ColliderComponent& col) {
+    auto& colPool = world.GetComponentArray<ColliderComponent>();
+    u32 count = colPool.Size();
+
+    for (u32 i = 0; i < count; i++) {
+        ColliderComponent& col = colPool.Data(i);
+        Entity e = colPool.GetEntity(i);
         auto* tr = world.GetComponent<TransformComponent>(e);
-        if (!tr) return;
+        if (!tr) continue;
 
         AABB worldAABB = col.GetWorldAABB(*tr);
         auto hit = Collision::RaycastAABB(ray, worldAABB);
@@ -221,7 +289,7 @@ HitResult PhysicsWorld::Raycast(ECSWorld& world, const Ray& ray, Entity* outEnti
             closest = hit;
             if (outEntity) *outEntity = e;
         }
-    });
+    }
 
     if (closest.Distance >= 1e30f) closest.Hit = false;
     return closest;
@@ -246,6 +314,13 @@ void PhysicsWorld::AddImpulse(ECSWorld& world, Entity e, const glm::vec3& impuls
     auto* rb = world.GetComponent<RigidBodyComponent>(e);
     if (!rb || rb->IsStatic || rb->Mass <= 0) return;
     rb->Velocity += impulse / rb->Mass;  // Δv = J/m
+}
+
+void PhysicsWorld::AddTorque(ECSWorld& world, Entity e, const glm::vec3& torque) {
+    auto* rb = world.GetComponent<RigidBodyComponent>(e);
+    if (!rb || rb->IsStatic || rb->Mass <= 0) return;
+    // 简化: 假设 I ≈ mass (均匀球体近似)
+    rb->AngularVelocity += torque / rb->Mass;
 }
 
 } // namespace Engine

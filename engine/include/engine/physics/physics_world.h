@@ -30,15 +30,25 @@ struct ColliderComponent : public Component {
 // ── 刚体组件 ────────────────────────────────────────────────
 
 struct RigidBodyComponent : public Component {
+    // ── 线性运动 ─────────────────────────────────────────
     glm::vec3 Velocity     = {0, 0, 0};
     glm::vec3 Acceleration = {0, 0, 0};
-    f32 Mass      = 1.0f;
-    f32 Restitution = 0.3f;  // 弹性系数 0~1
-    f32 Friction   = 0.5f;   // 摩擦系数
-    bool IsStatic  = false;  // 静态物体不受力
+
+    // ── 角运动 ───────────────────────────────────────────
+    glm::vec3 AngularVelocity = {0, 0, 0};  // rad/s
+
+    // ── 物理属性 ─────────────────────────────────────────
+    f32 Mass        = 1.0f;
+    f32 Restitution = 0.3f;   // 弹性系数 0~1
+    f32 Friction    = 0.5f;   // 摩擦系数
+    f32 LinearDamping  = 0.01f;  // 线性阻尼（空气阻力）
+    f32 AngularDamping = 0.05f;  // 角阻尼
+
+    // ── 标志 ─────────────────────────────────────────────
+    bool IsStatic   = false;  // 静态物体不受力
     bool UseGravity = true;
 
-    glm::vec3 GravityOverride = {0, -9.81f, 0}; // 重力
+    glm::vec3 GravityOverride = {0, -9.81f, 0};
 };
 
 // ── 碰撞回调 ────────────────────────────────────────────────
@@ -57,6 +67,9 @@ public:
 
     /// 施加瞬间冲量（直接改变速度，用于爆炸/跳跃等）
     static void AddImpulse(ECSWorld& world, Entity e, const glm::vec3& impulse);
+
+    /// 施加力矩（改变角速度）
+    static void AddTorque(ECSWorld& world, Entity e, const glm::vec3& torque);
 
     /// 射线检测（返回第一个命中的实体碰撞信息）
     static HitResult Raycast(ECSWorld& world, const Ray& ray,
