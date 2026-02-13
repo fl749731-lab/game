@@ -287,7 +287,12 @@ int main() {
             }
         }
 
-
+        // F12 G-Buffer 调试可视化 (循环: 关→位置→法线→漫反射→高光→自发光→关)
+        if (Engine::Input::IsKeyJustPressed(Engine::Key::F12)) {
+            int mode = Engine::SceneRenderer::GetGBufferDebugMode();
+            mode = (mode + 1) % 6;  // 0~5 循环
+            Engine::SceneRenderer::SetGBufferDebugMode(mode);
+        }
 
 
         // ── 摄像机（全部由控制器处理）───────────────────────
