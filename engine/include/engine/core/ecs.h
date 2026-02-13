@@ -114,6 +114,13 @@ struct MaterialComponent : public Component {
     f32 EmissiveIntensity = 1.0f;
 };
 
+/// 旋转动画组件 — 支持多轴自动旋转（替代硬编码的 CenterCube 逻辑）
+struct RotationAnimComponent : public Component {
+    f32 SpeedY = 0.6f;  // 绕 Y 轴旋转速度 (rad/s)
+    f32 SpeedX = 0.2f;  // 绕 X 轴旋转速度 (rad/s)
+    f32 SpeedZ = 0.0f;  // 绕 Z 轴旋转速度 (rad/s)
+};
+
 // ── ComponentPool —— 类型擦除的组件存储 ─────────────────────
 
 class ComponentPool {

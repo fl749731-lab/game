@@ -437,13 +437,17 @@ void SceneRenderer::RenderEntitiesDeferred(Scene& scene, PerspectiveCamera& came
         // Model 矩阵（使用 TransformSystem 预计算的世界矩阵）
         glm::mat4 model = tr->WorldMatrix;
 
-        // 旋转动画（CenterCube 演示用额外旋转）
-        auto* tag = world.GetComponent<TagComponent>(e);
-        if (tag && tag->Name == "CenterCube") {
+        // 旋转动画（通用 RotationAnimComponent 驱动）
+        auto* rotAnim = world.GetComponent<RotationAnimComponent>(e);
+        if (rotAnim) {
             glm::vec3 wp = tr->GetWorldPosition();
             model = glm::translate(glm::mat4(1.0f), wp);
-            model = glm::rotate(model, t * 0.6f, {0, 1, 0});
-            model = glm::rotate(model, t * 0.2f, {1, 0, 0});
+            if (rotAnim->SpeedY != 0.0f)
+                model = glm::rotate(model, t * rotAnim->SpeedY, {0, 1, 0});
+            if (rotAnim->SpeedX != 0.0f)
+                model = glm::rotate(model, t * rotAnim->SpeedX, {1, 0, 0});
+            if (rotAnim->SpeedZ != 0.0f)
+                model = glm::rotate(model, t * rotAnim->SpeedZ, {0, 0, 1});
         }
 
         s_GBufferShader->SetMat4("uModel", glm::value_ptr(model));
