@@ -85,6 +85,14 @@ struct AIComponent : public Component {
     f32 AttackRange = 2.0f;
 };
 
+struct ScriptComponent : public Component {
+    std::string ScriptModule;                                  // Python 模块名
+    bool Initialized = false;                                  // on_create 是否已调用
+    bool Enabled = true;                                       // 是否启用
+    std::unordered_map<std::string, f32> FloatVars;           // 脚本自定义浮点变量
+    std::unordered_map<std::string, std::string> StringVars;  // 脚本自定义字符串变量
+};
+
 struct RenderComponent : public Component {
     std::string MeshType = "cube";  // cube, sphere, plane, obj
     std::string ObjPath;

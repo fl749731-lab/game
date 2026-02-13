@@ -28,6 +28,14 @@ static void BuildDemoScene(Engine::Scene& scene) {
     world.AddSystem<Engine::TransformSystem>();  // 必须最先注册
     world.AddSystem<Engine::MovementSystem>();
     world.AddSystem<Engine::LifetimeSystem>();
+    world.AddSystem<Engine::ScriptSystem>();
+
+    // 游戏管理器 (逻辑层核心)
+    {
+        auto gm = scene.CreateEntity("GameManager");
+        auto& sc = world.AddComponent<Engine::ScriptComponent>(gm);
+        sc.ScriptModule = "game_manager";
+    }
 
     // 地面
     {
