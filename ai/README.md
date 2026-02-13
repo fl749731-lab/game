@@ -6,6 +6,7 @@
 
 - **ScriptComponent + ScriptSystem** — 通用脚本逻辑层，任何实体可挂载 Python 脚本
 - **AIComponent + AIManager** — AI 行为专用层（基于 ScriptComponent 的高级封装）
+- **层级指挥链** — 指挥官 → 小队长 → 士兵 三层决策，命令逐层下发
 
 ```text
 C++ Engine
@@ -13,9 +14,13 @@ C++ Engine
   │     ↕ PythonEngine
   │   Python 脚本 (engine_api.py ↔ C++ 引擎功能)
   │
-  └── AIManager ──→ AIComponent (NPC 行为)
-        ↕ PythonEngine
-      AI 脚本 (ai_utils.py)
+  └── AIManager (三阶段更新)
+        │
+        ├─ Phase 1: Commander AI    ─→ 全局战术 + 玩家意图识别
+        │    ↓ 命令下发
+        ├─ Phase 2: Squad Leader AI ─→ 小队战术 + 阵型管理
+        │    ↓ 子命令下发
+        └─ Phase 3: Soldier AI      ─→ 个体执行 + 本地自主
 ```
 
 ## 脚本生命周期
@@ -53,7 +58,7 @@ C++ Engine
 | 触发区域 | `trigger_zone.py` | 进入区域发送自定义事件 |
 | 投射物 | `projectile.py` | 沿方向飞行 + 碰撞伤害 |
 
-### AI 脚本
+### AI 脚本 — 基础
 
 | 脚本 | 文件 | 行为 |
 |------|------|------|
@@ -61,9 +66,19 @@ C++ Engine
 | 攻击型 | `aggressive_ai.py` | 主动寻找并追击敌人 |
 | 防御型 | `defensive_ai.py` | 保持据点，受攻击才反击 |
 
+### AI 脚本 — 层级指挥链
+
+| 脚本 | 文件 | 角色 | 能力 |
+|------|------|------|------|
+| 指挥官 AI | `commander_ai.py` | Commander | 玩家意图识别 (6种模式) + 长期记忆 + 战术矩阵 |
+| 小队长 AI | `squad_leader_ai.py` | Leader | 接收命令→分解子命令 + 阵型管理 (4种阵型) |
+| 智能士兵 AI | `smart_soldier_ai.py` | Soldier | 执行命令 + 阵型保持 + 集火协作 + 自我保护 |
+
+**使用方式**: 给实体添加 `SquadComponent` + `AIComponent`，设置 `Role`/`SquadID`/`ScriptModule`。
+
 ### 工具库
 
-- `ai_utils.py` — 距离计算、方向向量、范围检测
+- `ai_utils.py` — 距离计算、方向向量、阵型位置计算 (4种)、命令构建/解析、优先级目标选择
 - `engine_api.py` — 引擎功能 API 封装
 
 ## 开发新脚本
