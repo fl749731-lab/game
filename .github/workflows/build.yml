@@ -24,8 +24,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       # Linux: 安装 OpenGL / X11 开发依赖
       - name: Install Dependencies (Linux)
