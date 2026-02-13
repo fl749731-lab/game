@@ -85,6 +85,17 @@ struct AIComponent : public Component {
     f32 AttackRange = 2.0f;
 };
 
+// ── 小队组件 ────────────────────────────────────────────────
+
+struct SquadComponent : public Component {
+    u32 SquadID = 0;                    // 所属小队 ID（0 = 无小队）
+    u32 LeaderEntity = INVALID_ENTITY;  // 队长实体 ID
+    u32 CommanderEntity = INVALID_ENTITY; // 指挥官实体 ID
+    std::string Role = "soldier";       // "commander" | "leader" | "soldier"
+    std::string CurrentOrder;           // 当前接收到的命令（JSON字符串）
+    std::string OrderStatus = "idle";   // "idle" | "executing" | "completed" | "failed"
+};
+
 struct ScriptComponent : public Component {
     std::string ScriptModule;                                  // Python 模块名
     bool Initialized = false;                                  // on_create 是否已调用

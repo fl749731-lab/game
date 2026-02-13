@@ -34,7 +34,6 @@ bool PythonEngine::Init(const std::string& scriptsPath) {
         return false;
     }
 
-    // 添加脚本路径
     std::string pathCmd = "import sys; sys.path.insert(0, '" + scriptsPath + "')";
     PyRun_SimpleString(pathCmd.c_str());
 
@@ -188,6 +187,148 @@ AIState AIStateFromString(const std::string& str) {
 }
 
 // ════════════════════════════════════════════════════════════
+// PlayerTracker — 玩家行为追踪
+// ════════════════════════════════════════════════════════════
+
+std::deque<PlayerSnapshot> PlayerTracker::s_History;
+u32 PlayerTracker::s_PlayerEntity = INVALID_ENTITY;
+glm::vec3 PlayerTracker::s_LastPosition = {0,0,0};
+f32 PlayerTracker::s_TotalTime = 0;
+std::deque<f32> PlayerTracker::s_AttackTimes;
+std::deque<f32> PlayerTracker::s_RetreatTimes;
+f32 PlayerTracker::s_CombatTimer = 0;
+bool PlayerTracker::s_InCombat = false;
+
+void PlayerTracker::Update(Scene& scene, f32 dt) {
+    s_TotalTime += dt;
+    auto& world = scene.GetWorld();
+
+    // 找到玩家实体（带 "Player" tag 的实体）
+    u32 playerEntity = INVALID_ENTITY;
+    for (auto e : world.GetEntities()) {
+        auto* tag = world.GetComponent<TagComponent>(e);
+        if (tag && (tag->Name == "Player" || tag->Name == "player")) {
+            playerEntity = e;
+            break;
+        }
+        // 或者看 SquadComponent 角色
+        auto* sq = world.GetComponent<SquadComponent>(e);
+        if (sq && sq->Role == "player") {
+            playerEntity = e;
+            break;
+        }
+    }
+
+    if (playerEntity == INVALID_ENTITY) return;
+    s_PlayerEntity = playerEntity;
+
+    auto* tr = world.GetComponent<TransformComponent>(playerEntity);
+    if (!tr) return;
+
+    glm::vec3 pos = {tr->X, tr->Y, tr->Z};
+    glm::vec3 vel = (s_TotalTime > dt) ? (pos - s_LastPosition) / dt : glm::vec3(0);
+    f32 speed = glm::length(vel);
+
+    // 检测后退（速度方向与朝敌方向相反）
+    if (speed > 0.5f) {
+        // 简化：如果远离最近的 AI 实体，算后退
+        glm::vec3 toLastPos = pos - s_LastPosition;
+        if (glm::length(toLastPos) > 0.1f) {
+            // 此处仅记录，具体检测在 FindNearbyEntities 后做
+        }
+    }
+
+    // 记录快照
+    PlayerSnapshot snap;
+    snap.Position = pos;
+    snap.Velocity = vel;
+    snap.Speed = speed;
+    snap.Timestamp = s_TotalTime;
+    s_History.push_back(snap);
+
+    while (s_History.size() > MAX_HISTORY) s_History.pop_front();
+
+    // 清理过期事件
+    while (!s_AttackTimes.empty() && s_TotalTime - s_AttackTimes.front() > EVENT_WINDOW)
+        s_AttackTimes.pop_front();
+    while (!s_RetreatTimes.empty() && s_TotalTime - s_RetreatTimes.front() > EVENT_WINDOW)
+        s_RetreatTimes.pop_front();
+
+    // 战斗计时器
+    if (s_InCombat) s_CombatTimer += dt;
+
+    s_LastPosition = pos;
+}
+
+void PlayerTracker::Reset() {
+    s_History.clear();
+    s_AttackTimes.clear();
+    s_RetreatTimes.clear();
+    s_PlayerEntity = INVALID_ENTITY;
+    s_LastPosition = {0,0,0};
+    s_TotalTime = 0;
+    s_CombatTimer = 0;
+    s_InCombat = false;
+}
+
+glm::vec3 PlayerTracker::GetPlayerPosition() {
+    return s_History.empty() ? glm::vec3(0) : s_History.back().Position;
+}
+
+glm::vec3 PlayerTracker::GetPlayerVelocity() {
+    return s_History.empty() ? glm::vec3(0) : s_History.back().Velocity;
+}
+
+f32 PlayerTracker::GetPlayerSpeed() {
+    return s_History.empty() ? 0 : s_History.back().Speed;
+}
+
+f32 PlayerTracker::GetAverageSpeed() {
+    if (s_History.empty()) return 0;
+    f32 total = 0;
+    for (auto& s : s_History) total += s.Speed;
+    return total / (f32)s_History.size();
+}
+
+const std::deque<PlayerSnapshot>& PlayerTracker::GetHistory() { return s_History; }
+u32 PlayerTracker::GetAttackCount() { return (u32)s_AttackTimes.size(); }
+u32 PlayerTracker::GetRetreatCount() { return (u32)s_RetreatTimes.size(); }
+
+f32 PlayerTracker::GetAggressionScore() {
+    u32 total = (u32)(s_AttackTimes.size() + s_RetreatTimes.size());
+    if (total == 0) return 0.5f;
+    return (f32)s_AttackTimes.size() / (f32)total;
+}
+
+f32 PlayerTracker::GetCombatTime() { return s_CombatTimer; }
+
+void PlayerTracker::RecordAttack() {
+    s_AttackTimes.push_back(s_TotalTime);
+    s_InCombat = true;
+}
+
+void PlayerTracker::RecordRetreat() {
+    s_RetreatTimes.push_back(s_TotalTime);
+}
+
+std::string PlayerTracker::ToJSON() {
+    std::ostringstream ss;
+    auto pos = GetPlayerPosition();
+    auto vel = GetPlayerVelocity();
+    ss << "{";
+    ss << "\"pos\":[" << pos.x << "," << pos.y << "," << pos.z << "],";
+    ss << "\"vel\":[" << vel.x << "," << vel.y << "," << vel.z << "],";
+    ss << "\"speed\":" << GetPlayerSpeed() << ",";
+    ss << "\"avg_speed\":" << GetAverageSpeed() << ",";
+    ss << "\"attack_count\":" << GetAttackCount() << ",";
+    ss << "\"retreat_count\":" << GetRetreatCount() << ",";
+    ss << "\"aggression\":" << GetAggressionScore() << ",";
+    ss << "\"combat_time\":" << GetCombatTime();
+    ss << "}";
+    return ss.str();
+}
+
+// ════════════════════════════════════════════════════════════
 // AIAgent
 // ════════════════════════════════════════════════════════════
 
@@ -197,87 +338,71 @@ AIAction AIAgent::UpdateAI(const AIContext& ctx) {
 
     if (!PythonEngine::IsInitialized()) return action;
 
-    // 序列化上下文为 JSON 字符串传给 Python
-    std::ostringstream ss;
-    ss << "{";
-    ss << "\"entity_id\":" << ctx.EntityID << ",";
-    ss << "\"pos\":[" << ctx.Position.x << "," << ctx.Position.y << "," << ctx.Position.z << "],";
-    ss << "\"health\":" << ctx.Health << ",";
-    ss << "\"max_health\":" << ctx.MaxHealth << ",";
-    ss << "\"state\":\"" << AIStateToString(ctx.CurrentState) << "\",";
-    ss << "\"detect_range\":" << ctx.DetectRange << ",";
-    ss << "\"attack_range\":" << ctx.AttackRange << ",";
-    ss << "\"move_speed\":" << ctx.MoveSpeed << ",";
-    ss << "\"dt\":" << ctx.DeltaTime << ",";
-
-    // 附近敌人
-    ss << "\"enemies\":[";
-    for (size_t i = 0; i < ctx.NearbyEnemies.size(); i++) {
-        auto& e = ctx.NearbyEnemies[i];
-        if (i > 0) ss << ",";
-        ss << "{\"id\":" << e.EntityID
-           << ",\"pos\":[" << e.Position.x << "," << e.Position.y << "," << e.Position.z << "]"
-           << ",\"health\":" << e.Health
-           << ",\"dist\":" << e.Distance
-           << ",\"tag\":\"" << e.Tag << "\""
-           << "}";
-    }
-    ss << "],";
-
-    // 巡逻点
-    ss << "\"patrol_points\":[";
-    for (size_t i = 0; i < ctx.PatrolPoints.size(); i++) {
-        if (i > 0) ss << ",";
-        ss << "[" << ctx.PatrolPoints[i].x << "," << ctx.PatrolPoints[i].y << "," << ctx.PatrolPoints[i].z << "]";
-    }
-    ss << "],";
-    ss << "\"patrol_index\":" << ctx.CurrentPatrolIndex;
-    ss << "}";
-
-    std::string ctxJson = ss.str();
+    std::string ctxJson = AIManager::ContextToJSON(ctx);
     std::string result = PythonEngine::CallFunction(ScriptModule, "update_ai", {ctxJson});
 
-    // 解析返回值: "state|dir_x,dir_y,dir_z|speed|target_id|custom"
     action = AIManager::ParseAction(result);
     return action;
 }
 
 // ════════════════════════════════════════════════════════════
-// AIManager
+// AIManager — 三阶段层级更新
 // ════════════════════════════════════════════════════════════
 
 u32 AIManager::s_AgentCount = 0;
 
 void AIManager::Init() {
     s_AgentCount = 0;
-    LOG_INFO("[AI] AIManager 已初始化");
+    PlayerTracker::Reset();
+    LOG_INFO("[AI] AIManager 已初始化 (层级指挥链模式)");
 }
 
 void AIManager::Shutdown() {
     s_AgentCount = 0;
+    PlayerTracker::Reset();
     LOG_DEBUG("[AI] AIManager 已关闭");
 }
 
 void AIManager::Update(Scene& scene, f32 dt) {
     if (!PythonEngine::IsInitialized()) return;
 
+    // 0. 更新玩家行为追踪
+    PlayerTracker::Update(scene, dt);
+
+    // 1. 指挥官决策（全局态势 → 下发战术命令给队长）
+    UpdateCommanders(scene, dt);
+
+    // 2. 小队长决策（接收命令 → 分解为子命令给士兵）
+    UpdateSquadLeaders(scene, dt);
+
+    // 3. 士兵执行（接收子命令 → 本地决策 → 行动）
+    UpdateSoldiers(scene, dt);
+}
+
+// ── 阶段1：指挥官 ──────────────────────────────────────
+
+void AIManager::UpdateCommanders(Scene& scene, f32 dt) {
     auto& world = scene.GetWorld();
-    u32 count = 0;
 
     for (auto e : world.GetEntities()) {
+        auto* sq = world.GetComponent<SquadComponent>(e);
+        if (!sq || sq->Role != "commander") continue;
+
         auto* aiComp = world.GetComponent<AIComponent>(e);
         if (!aiComp) continue;
 
         auto* hpComp = world.GetComponent<HealthComponent>(e);
-        auto* trComp = world.GetComponent<TransformComponent>(e);
-
-        // 跳过死亡实体
         if (hpComp && hpComp->Current <= 0) continue;
 
-        // 构建上下文
         AIContext ctx = BuildContext(scene, e, dt);
+        ctx.Role = "commander";
 
-        // 用 AIAgent 包装调用 Python
+        // 注入玩家行为数据
+        InjectPlayerData(ctx);
+
+        // 注入所有小队概览
+        InjectCommanderData(scene, ctx);
+
         AIAgent agent;
         agent.EntityID = e;
         agent.State = AIStateFromString(aiComp->State);
@@ -286,18 +411,137 @@ void AIManager::Update(Scene& scene, f32 dt) {
         agent.ScriptModule = aiComp->ScriptModule;
 
         AIAction action = agent.UpdateAI(ctx);
-
-        // 回写状态
         aiComp->State = AIStateToString(action.NewState);
-
-        // 应用移动
         ApplyAction(scene, e, action, dt);
 
-        count++;
-    }
+        // 下发命令给所属队长
+        if (!action.OrderForSubordinates.empty()) {
+            DispatchOrders(scene, e, action.OrderForSubordinates, "leader");
+        }
 
-    s_AgentCount = count;
+        s_AgentCount++;
+    }
 }
+
+// ── 阶段2：小队长 ──────────────────────────────────────
+
+void AIManager::UpdateSquadLeaders(Scene& scene, f32 dt) {
+    auto& world = scene.GetWorld();
+
+    for (auto e : world.GetEntities()) {
+        auto* sq = world.GetComponent<SquadComponent>(e);
+        if (!sq || sq->Role != "leader") continue;
+
+        auto* aiComp = world.GetComponent<AIComponent>(e);
+        if (!aiComp) continue;
+
+        auto* hpComp = world.GetComponent<HealthComponent>(e);
+        if (hpComp && hpComp->Current <= 0) continue;
+
+        AIContext ctx = BuildContext(scene, e, dt);
+        ctx.Role = "leader";
+        ctx.CurrentOrder = sq->CurrentOrder;
+        ctx.SquadID = sq->SquadID;
+
+        InjectPlayerData(ctx);
+        InjectSquadData(scene, ctx, e);
+
+        AIAgent agent;
+        agent.EntityID = e;
+        agent.State = AIStateFromString(aiComp->State);
+        agent.DetectRange = aiComp->DetectRange;
+        agent.AttackRange = aiComp->AttackRange;
+        agent.ScriptModule = aiComp->ScriptModule;
+
+        AIAction action = agent.UpdateAI(ctx);
+        aiComp->State = AIStateToString(action.NewState);
+        ApplyAction(scene, e, action, dt);
+
+        // 下发子命令给本小队士兵
+        if (!action.OrderForSubordinates.empty()) {
+            DispatchOrders(scene, e, action.OrderForSubordinates, "soldier");
+        }
+
+        sq->OrderStatus = "executing";
+        s_AgentCount++;
+    }
+}
+
+// ── 阶段3：士兵 ────────────────────────────────────────
+
+void AIManager::UpdateSoldiers(Scene& scene, f32 dt) {
+    auto& world = scene.GetWorld();
+
+    for (auto e : world.GetEntities()) {
+        auto* sq = world.GetComponent<SquadComponent>(e);
+        auto* aiComp = world.GetComponent<AIComponent>(e);
+        if (!aiComp) continue;
+
+        // 跳过指挥官和队长
+        if (sq && (sq->Role == "commander" || sq->Role == "leader")) continue;
+
+        auto* hpComp = world.GetComponent<HealthComponent>(e);
+        if (hpComp && hpComp->Current <= 0) continue;
+
+        AIContext ctx = BuildContext(scene, e, dt);
+
+        if (sq) {
+            ctx.Role = "soldier";
+            ctx.SquadID = sq->SquadID;
+            ctx.CurrentOrder = sq->CurrentOrder;
+            InjectSquadData(scene, ctx, e);
+        }
+
+        AIAgent agent;
+        agent.EntityID = e;
+        agent.State = AIStateFromString(aiComp->State);
+        agent.DetectRange = aiComp->DetectRange;
+        agent.AttackRange = aiComp->AttackRange;
+        agent.ScriptModule = aiComp->ScriptModule;
+
+        AIAction action = agent.UpdateAI(ctx);
+        aiComp->State = AIStateToString(action.NewState);
+        ApplyAction(scene, e, action, dt);
+
+        if (sq) sq->OrderStatus = "executing";
+        s_AgentCount++;
+    }
+}
+
+// ── 命令下发 ────────────────────────────────────────────
+
+void AIManager::DispatchOrders(Scene& scene, u32 issuerEntity,
+                                const std::string& orderJson,
+                                const std::string& targetRole) {
+    auto& world = scene.GetWorld();
+    auto* issuerSq = world.GetComponent<SquadComponent>(issuerEntity);
+    if (!issuerSq) return;
+
+    for (auto e : world.GetEntities()) {
+        if (e == issuerEntity) continue;
+        auto* sq = world.GetComponent<SquadComponent>(e);
+        if (!sq) continue;
+
+        bool shouldReceive = false;
+
+        if (issuerSq->Role == "commander") {
+            // 指挥官 → 队长：同一个指挥官下的队长
+            if (targetRole == "leader" && sq->Role == "leader" && sq->CommanderEntity == issuerEntity)
+                shouldReceive = true;
+        } else if (issuerSq->Role == "leader") {
+            // 队长 → 士兵：同一小队的士兵
+            if (targetRole == "soldier" && sq->Role == "soldier" && sq->SquadID == issuerSq->SquadID)
+                shouldReceive = true;
+        }
+
+        if (shouldReceive) {
+            sq->CurrentOrder = orderJson;
+            sq->OrderStatus = "pending";
+        }
+    }
+}
+
+// ── 上下文构建 ──────────────────────────────────────────
 
 AIContext AIManager::BuildContext(Scene& scene, u32 entityID, f32 dt) {
     AIContext ctx;
@@ -306,34 +550,122 @@ AIContext AIManager::BuildContext(Scene& scene, u32 entityID, f32 dt) {
 
     auto& world = scene.GetWorld();
 
-    // 位置
     if (auto* tr = world.GetComponent<TransformComponent>(entityID)) {
         ctx.Position = {tr->X, tr->Y, tr->Z};
         ctx.Rotation = {tr->RotX, tr->RotY, tr->RotZ};
     }
 
-    // 生命
     if (auto* hp = world.GetComponent<HealthComponent>(entityID)) {
         ctx.Health = hp->Current;
         ctx.MaxHealth = hp->Max;
     }
 
-    // AI 参数
     if (auto* ai = world.GetComponent<AIComponent>(entityID)) {
         ctx.CurrentState = AIStateFromString(ai->State);
         ctx.DetectRange = ai->DetectRange;
         ctx.AttackRange = ai->AttackRange;
     }
 
-    // 查找附近实体
     ctx.NearbyEnemies = FindNearbyEntities(scene, entityID, ctx.Position, ctx.DetectRange);
 
     return ctx;
 }
 
+void AIManager::InjectPlayerData(AIContext& ctx) {
+    ctx.HasPlayerData = true;
+    ctx.PlayerPosition = PlayerTracker::GetPlayerPosition();
+    ctx.PlayerVelocity = PlayerTracker::GetPlayerVelocity();
+    ctx.PlayerSpeed = PlayerTracker::GetPlayerSpeed();
+    ctx.PlayerAvgSpeed = PlayerTracker::GetAverageSpeed();
+    ctx.PlayerAttackCount = PlayerTracker::GetAttackCount();
+    ctx.PlayerRetreatCount = PlayerTracker::GetRetreatCount();
+    ctx.PlayerAggressionScore = PlayerTracker::GetAggressionScore();
+    ctx.PlayerCombatTime = PlayerTracker::GetCombatTime();
+}
+
+void AIManager::InjectSquadData(Scene& scene, AIContext& ctx, u32 entityID) {
+    auto& world = scene.GetWorld();
+    auto* mySq = world.GetComponent<SquadComponent>(entityID);
+    if (!mySq) return;
+
+    ctx.SquadID = mySq->SquadID;
+    u32 total = 0, alive = 0;
+
+    for (auto e : world.GetEntities()) {
+        if (e == entityID) continue;
+        auto* sq = world.GetComponent<SquadComponent>(e);
+        if (!sq || sq->SquadID != mySq->SquadID) continue;
+
+        total++;
+
+        auto* tr = world.GetComponent<TransformComponent>(e);
+        auto* hp = world.GetComponent<HealthComponent>(e);
+        auto* ai = world.GetComponent<AIComponent>(e);
+
+        if (hp && hp->Current <= 0) continue;
+        alive++;
+
+        AllyInfo ally;
+        ally.EntityID = e;
+        if (tr) {
+            ally.Position = {tr->X, tr->Y, tr->Z};
+            ally.Distance = glm::length(ally.Position - ctx.Position);
+        }
+        if (hp) { ally.Health = hp->Current; ally.MaxHealth = hp->Max; }
+        if (ai) ally.State = ai->State;
+        ally.Role = sq->Role;
+
+        ctx.SquadMembers.push_back(ally);
+    }
+
+    ctx.SquadSize = total + 1;
+    ctx.SquadAlive = alive + 1;
+}
+
+void AIManager::InjectCommanderData(Scene& scene, AIContext& ctx) {
+    auto& world = scene.GetWorld();
+
+    // 收集所有小队信息
+    std::unordered_map<u32, AIContext::SquadSummary> squads;
+
+    for (auto e : world.GetEntities()) {
+        auto* sq = world.GetComponent<SquadComponent>(e);
+        if (!sq || sq->SquadID == 0) continue;
+
+        auto& summary = squads[sq->SquadID];
+        summary.SquadID = sq->SquadID;
+        summary.TotalMembers++;
+
+        auto* hp = world.GetComponent<HealthComponent>(e);
+        auto* tr = world.GetComponent<TransformComponent>(e);
+
+        if (hp && hp->Current > 0) {
+            summary.AliveMembers++;
+            summary.AverageHealth += hp->Current;
+        }
+        if (tr) {
+            summary.CenterPosition += glm::vec3(tr->X, tr->Y, tr->Z);
+        }
+
+        if (sq->Role == "leader") {
+            summary.CurrentOrder = sq->CurrentOrder.empty() ? "idle" : "active";
+        }
+    }
+
+    for (auto& [id, s] : squads) {
+        if (s.TotalMembers > 0) {
+            s.AverageHealth /= (f32)s.AliveMembers;
+            s.CenterPosition /= (f32)s.TotalMembers;
+        }
+        ctx.AllSquads.push_back(s);
+    }
+}
+
+// ── 附近实体查找 ────────────────────────────────────────
+
 std::vector<NearbyEntity> AIManager::FindNearbyEntities(
     Scene& scene, u32 selfID, const glm::vec3& pos, f32 range) {
-    
+
     std::vector<NearbyEntity> result;
     auto& world = scene.GetWorld();
 
@@ -363,7 +695,6 @@ std::vector<NearbyEntity> AIManager::FindNearbyEntities(
         result.push_back(ne);
     }
 
-    // 按距离排序
     std::sort(result.begin(), result.end(),
         [](const NearbyEntity& a, const NearbyEntity& b) {
             return a.Distance < b.Distance;
@@ -372,34 +703,142 @@ std::vector<NearbyEntity> AIManager::FindNearbyEntities(
     return result;
 }
 
+// ── 动作应用 ────────────────────────────────────────────
+
 void AIManager::ApplyAction(Scene& scene, u32 entityID, const AIAction& action, f32 dt) {
     auto& world = scene.GetWorld();
     auto* tr = world.GetComponent<TransformComponent>(entityID);
     if (!tr) return;
 
-    // 应用移动
     if (action.MoveSpeed > 0.001f) {
         glm::vec3 dir = action.MoveDirection;
         f32 len = glm::length(dir);
         if (len > 0.001f) {
-            dir /= len; // 归一化
+            dir /= len;
             f32 speed = action.MoveSpeed * dt;
             tr->X += dir.x * speed;
             tr->Y += dir.y * speed;
             tr->Z += dir.z * speed;
-
-            // 面向移动方向 (Y 轴旋转)
             tr->RotY = glm::degrees(atan2f(dir.x, dir.z));
         }
     }
 }
 
+// ── JSON 序列化（完整版 — 含小队+玩家数据）───────────────
+
+std::string AIManager::ContextToJSON(const AIContext& ctx) {
+    std::ostringstream ss;
+    ss << "{";
+
+    // 基础信息
+    ss << "\"entity_id\":" << ctx.EntityID << ",";
+    ss << "\"pos\":[" << ctx.Position.x << "," << ctx.Position.y << "," << ctx.Position.z << "],";
+    ss << "\"health\":" << ctx.Health << ",";
+    ss << "\"max_health\":" << ctx.MaxHealth << ",";
+    ss << "\"state\":\"" << AIStateToString(ctx.CurrentState) << "\",";
+    ss << "\"detect_range\":" << ctx.DetectRange << ",";
+    ss << "\"attack_range\":" << ctx.AttackRange << ",";
+    ss << "\"move_speed\":" << ctx.MoveSpeed << ",";
+    ss << "\"dt\":" << ctx.DeltaTime << ",";
+
+    // 小队信息
+    ss << "\"role\":\"" << ctx.Role << "\",";
+    ss << "\"squad_id\":" << ctx.SquadID << ",";
+    ss << "\"squad_size\":" << ctx.SquadSize << ",";
+    ss << "\"squad_alive\":" << ctx.SquadAlive << ",";
+
+    // 当前命令
+    if (!ctx.CurrentOrder.empty()) {
+        ss << "\"order\":" << ctx.CurrentOrder << ",";
+    } else {
+        ss << "\"order\":null,";
+    }
+
+    // 附近敌人
+    ss << "\"enemies\":[";
+    for (size_t i = 0; i < ctx.NearbyEnemies.size(); i++) {
+        auto& e = ctx.NearbyEnemies[i];
+        if (i > 0) ss << ",";
+        ss << "{\"id\":" << e.EntityID
+           << ",\"pos\":[" << e.Position.x << "," << e.Position.y << "," << e.Position.z << "]"
+           << ",\"health\":" << e.Health
+           << ",\"dist\":" << e.Distance
+           << ",\"tag\":\"" << e.Tag << "\""
+           << "}";
+    }
+    ss << "],";
+
+    // 队友信息
+    ss << "\"allies\":[";
+    for (size_t i = 0; i < ctx.SquadMembers.size(); i++) {
+        auto& a = ctx.SquadMembers[i];
+        if (i > 0) ss << ",";
+        ss << "{\"id\":" << a.EntityID
+           << ",\"pos\":[" << a.Position.x << "," << a.Position.y << "," << a.Position.z << "]"
+           << ",\"health\":" << a.Health
+           << ",\"max_health\":" << a.MaxHealth
+           << ",\"state\":\"" << a.State << "\""
+           << ",\"role\":\"" << a.Role << "\""
+           << ",\"dist\":" << a.Distance
+           << "}";
+    }
+    ss << "],";
+
+    // 巡逻点
+    ss << "\"patrol_points\":[";
+    for (size_t i = 0; i < ctx.PatrolPoints.size(); i++) {
+        if (i > 0) ss << ",";
+        ss << "[" << ctx.PatrolPoints[i].x << "," << ctx.PatrolPoints[i].y << "," << ctx.PatrolPoints[i].z << "]";
+    }
+    ss << "],";
+    ss << "\"patrol_index\":" << ctx.CurrentPatrolIndex << ",";
+
+    // 玩家行为数据（指挥官/队长可见）
+    if (ctx.HasPlayerData) {
+        ss << "\"player\":{";
+        ss << "\"pos\":[" << ctx.PlayerPosition.x << "," << ctx.PlayerPosition.y << "," << ctx.PlayerPosition.z << "],";
+        ss << "\"vel\":[" << ctx.PlayerVelocity.x << "," << ctx.PlayerVelocity.y << "," << ctx.PlayerVelocity.z << "],";
+        ss << "\"speed\":" << ctx.PlayerSpeed << ",";
+        ss << "\"avg_speed\":" << ctx.PlayerAvgSpeed << ",";
+        ss << "\"attack_count\":" << ctx.PlayerAttackCount << ",";
+        ss << "\"retreat_count\":" << ctx.PlayerRetreatCount << ",";
+        ss << "\"aggression\":" << ctx.PlayerAggressionScore << ",";
+        ss << "\"combat_time\":" << ctx.PlayerCombatTime;
+        ss << "},";
+    } else {
+        ss << "\"player\":null,";
+    }
+
+    // 小队概览（指挥官可见）
+    if (!ctx.AllSquads.empty()) {
+        ss << "\"squads\":[";
+        for (size_t i = 0; i < ctx.AllSquads.size(); i++) {
+            auto& s = ctx.AllSquads[i];
+            if (i > 0) ss << ",";
+            ss << "{\"id\":" << s.SquadID
+               << ",\"total\":" << s.TotalMembers
+               << ",\"alive\":" << s.AliveMembers
+               << ",\"avg_hp\":" << s.AverageHealth
+               << ",\"center\":[" << s.CenterPosition.x << "," << s.CenterPosition.y << "," << s.CenterPosition.z << "]"
+               << ",\"order\":\"" << s.CurrentOrder << "\""
+               << "}";
+        }
+        ss << "]";
+    } else {
+        ss << "\"squads\":[]";
+    }
+
+    ss << "}";
+    return ss.str();
+}
+
+// ── 返回值解析 ──────────────────────────────────────────
+
 AIAction AIManager::ParseAction(const std::string& result) {
     AIAction action;
     if (result.empty()) return action;
 
-    // 格式: "state|dir_x,dir_y,dir_z|speed|target_id|custom"
-    // 最简格式: "state" (向后兼容)
+    // 格式: "state|dir_x,dir_y,dir_z|speed|target_id|custom|order_json"
     std::vector<std::string> parts;
     std::istringstream ss(result);
     std::string part;
@@ -412,7 +851,7 @@ AIAction AIManager::ParseAction(const std::string& result) {
     // [0] 新状态
     action.NewState = AIStateFromString(parts[0]);
 
-    // [1] 移动方向 "x,y,z"
+    // [1] 移动方向
     if (parts.size() > 1 && !parts[1].empty()) {
         f32 x = 0, y = 0, z = 0;
         if (sscanf(parts[1].c_str(), "%f,%f,%f", &x, &y, &z) >= 2) {
@@ -420,16 +859,16 @@ AIAction AIManager::ParseAction(const std::string& result) {
         }
     }
 
-    // [2] 移动速度
+    // [2] 速度
     if (parts.size() > 2 && !parts[2].empty()) {
         try { action.MoveSpeed = std::stof(parts[2]); }
-        catch (...) { LOG_WARN("[AI] ParseAction: 无效速度 '%s'", parts[2].c_str()); }
+        catch (...) {}
     }
 
-    // [3] 目标实体 ID
+    // [3] 目标
     if (parts.size() > 3 && !parts[3].empty()) {
         try { action.TargetEntityID = (u32)std::stoul(parts[3]); }
-        catch (...) { LOG_WARN("[AI] ParseAction: 无效目标ID '%s'", parts[3].c_str()); }
+        catch (...) {}
     }
 
     // [4] 自定义动作
@@ -437,11 +876,15 @@ AIAction AIManager::ParseAction(const std::string& result) {
         action.CustomAction = parts[4];
     }
 
+    // [5] 🆕 下发给下属的命令 JSON
+    if (parts.size() > 5 && !parts[5].empty()) {
+        action.OrderForSubordinates = parts[5];
+    }
+
     return action;
 }
 
 std::vector<std::string> AIManager::ContextToArgs(const AIContext& ctx) {
-    // 保留，未来可能用于其他传参方式
     return {};
 }
 
@@ -496,15 +939,48 @@ AIState AIStateFromString(const std::string& str) {
 
 AIAction AIAgent::UpdateAI(const AIContext&) { return {}; }
 
+// PlayerTracker stubs
+std::deque<PlayerSnapshot> PlayerTracker::s_History;
+u32 PlayerTracker::s_PlayerEntity = 0;
+glm::vec3 PlayerTracker::s_LastPosition = {0,0,0};
+f32 PlayerTracker::s_TotalTime = 0;
+std::deque<f32> PlayerTracker::s_AttackTimes;
+std::deque<f32> PlayerTracker::s_RetreatTimes;
+f32 PlayerTracker::s_CombatTimer = 0;
+bool PlayerTracker::s_InCombat = false;
+
+void PlayerTracker::Update(Scene&, f32) {}
+void PlayerTracker::Reset() {}
+glm::vec3 PlayerTracker::GetPlayerPosition() { return {}; }
+glm::vec3 PlayerTracker::GetPlayerVelocity() { return {}; }
+f32 PlayerTracker::GetPlayerSpeed() { return 0; }
+f32 PlayerTracker::GetAverageSpeed() { return 0; }
+const std::deque<PlayerSnapshot>& PlayerTracker::GetHistory() { return s_History; }
+u32 PlayerTracker::GetAttackCount() { return 0; }
+u32 PlayerTracker::GetRetreatCount() { return 0; }
+f32 PlayerTracker::GetAggressionScore() { return 0.5f; }
+f32 PlayerTracker::GetCombatTime() { return 0; }
+void PlayerTracker::RecordAttack() {}
+void PlayerTracker::RecordRetreat() {}
+std::string PlayerTracker::ToJSON() { return "{}"; }
+
 u32 AIManager::s_AgentCount = 0;
 void AIManager::Init() { LOG_WARN("[AI] AIManager: Python 未启用"); }
 void AIManager::Shutdown() {}
 void AIManager::Update(Scene&, f32) {}
+void AIManager::UpdateCommanders(Scene&, f32) {}
+void AIManager::UpdateSquadLeaders(Scene&, f32) {}
+void AIManager::UpdateSoldiers(Scene&, f32) {}
 AIContext AIManager::BuildContext(Scene&, u32, f32) { return {}; }
+void AIManager::InjectPlayerData(AIContext&) {}
+void AIManager::InjectSquadData(Scene&, AIContext&, u32) {}
+void AIManager::InjectCommanderData(Scene&, AIContext&) {}
 std::vector<NearbyEntity> AIManager::FindNearbyEntities(Scene&, u32, const glm::vec3&, f32) { return {}; }
 void AIManager::ApplyAction(Scene&, u32, const AIAction&, f32) {}
+void AIManager::DispatchOrders(Scene&, u32, const std::string&, const std::string&) {}
 std::vector<std::string> AIManager::ContextToArgs(const AIContext&) { return {}; }
 AIAction AIManager::ParseAction(const std::string&) { return {}; }
+std::string AIManager::ContextToJSON(const AIContext&) { return "{}"; }
 
 } // namespace AI
 } // namespace Engine
