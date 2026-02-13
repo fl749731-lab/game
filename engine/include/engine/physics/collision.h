@@ -7,8 +7,38 @@
 #include <optional>
 #include <unordered_map>
 #include <utility>
+#include <unordered_set>
 
 namespace Engine {
+
+// ── 碰撞层 ──────────────────────────────────────────────────
+
+namespace CollisionLayer {
+    constexpr u16 Default    = 1 << 0;   // 默认层
+    constexpr u16 Static     = 1 << 1;   // 静态环境
+    constexpr u16 Player     = 1 << 2;   // 玩家
+    constexpr u16 Enemy      = 1 << 3;   // 敌人
+    constexpr u16 Projectile = 1 << 4;   // 子弹/抛射物
+    constexpr u16 Trigger    = 1 << 5;   // 触发区域
+    constexpr u16 Pickup     = 1 << 6;   // 拾取物
+    constexpr u16 Terrain    = 1 << 7;   // 地形
+    constexpr u16 All        = 0xFFFF;
+}
+
+// ── 物理材质 ────────────────────────────────────────────────
+
+struct PhysicsMaterial {
+    f32 Restitution = 0.3f;   // 弹性 0~1
+    f32 Friction    = 0.5f;   // 摩擦
+    f32 Density     = 1.0f;   // 密度 (kg/m³)
+
+    static PhysicsMaterial Default()  { return {0.3f, 0.5f, 1.0f}; }
+    static PhysicsMaterial Bouncy()   { return {0.9f, 0.2f, 1.0f}; }
+    static PhysicsMaterial Ice()      { return {0.1f, 0.05f, 0.9f}; }
+    static PhysicsMaterial Rubber()   { return {0.8f, 0.8f, 1.1f}; }
+    static PhysicsMaterial Metal()    { return {0.2f, 0.4f, 7.8f}; }
+    static PhysicsMaterial Wood()     { return {0.4f, 0.6f, 0.6f}; }
+};
 
 // ── AABB 包围盒 ─────────────────────────────────────────────
 
@@ -16,19 +46,14 @@ struct AABB {
     glm::vec3 Min = {-0.5f, -0.5f, -0.5f};
     glm::vec3 Max = { 0.5f,  0.5f,  0.5f};
 
-    /// 获取中心点
     glm::vec3 Center() const { return (Min + Max) * 0.5f; }
-
-    /// 获取半尺寸
     glm::vec3 HalfSize() const { return (Max - Min) * 0.5f; }
 
-    /// 合并另一个 AABB
     void Merge(const AABB& other) {
         Min = glm::min(Min, other.Min);
         Max = glm::max(Max, other.Max);
     }
 
-    /// 包含点检测
     bool Contains(const glm::vec3& point) const {
         return point.x >= Min.x && point.x <= Max.x &&
                point.y >= Min.y && point.y <= Max.y &&
@@ -41,13 +66,57 @@ struct AABB {
 struct Sphere {
     glm::vec3 Center = {0, 0, 0};
     f32 Radius = 0.5f;
+
+    /// 获取包围的 AABB
+    AABB ToAABB() const {
+        return { Center - glm::vec3(Radius), Center + glm::vec3(Radius) };
+    }
+};
+
+// ── 胶囊体 ─────────────────────────────────────────────────
+
+struct Capsule {
+    glm::vec3 PointA = {0, -0.5f, 0};  // 底部球心
+    glm::vec3 PointB = {0,  0.5f, 0};  // 顶部球心
+    f32 Radius = 0.25f;
+
+    /// 获取中心
+    glm::vec3 Center() const { return (PointA + PointB) * 0.5f; }
+
+    /// 获取高度（含两端球半径）
+    f32 Height() const { return glm::length(PointB - PointA) + 2.0f * Radius; }
+
+    /// 获取包围的 AABB
+    AABB ToAABB() const {
+        AABB aabb;
+        aabb.Min = glm::min(PointA, PointB) - glm::vec3(Radius);
+        aabb.Max = glm::max(PointA, PointB) + glm::vec3(Radius);
+        return aabb;
+    }
+
+    /// 获取线段上离给定点最近的点
+    static glm::vec3 ClosestPointOnSegment(const glm::vec3& p,
+                                            const glm::vec3& a, const glm::vec3& b) {
+        glm::vec3 ab = b - a;
+        f32 t = glm::dot(p - a, ab) / glm::dot(ab, ab);
+        t = glm::clamp(t, 0.0f, 1.0f);
+        return a + ab * t;
+    }
+};
+
+// ── 碰撞体形状枚举 ─────────────────────────────────────────
+
+enum class ColliderShape : u8 {
+    Box,       // AABB
+    Sphere,    // 球
+    Capsule,   // 胶囊
 };
 
 // ── 射线 ────────────────────────────────────────────────────
 
 struct Ray {
     glm::vec3 Origin    = {0, 0, 0};
-    glm::vec3 Direction = {0, 0, -1};  // 应为单位向量
+    glm::vec3 Direction = {0, 0, -1};
 
     glm::vec3 At(f32 t) const { return Origin + Direction * t; }
 };
@@ -56,14 +125,30 @@ struct Ray {
 
 struct HitResult {
     bool Hit = false;
-    f32  Distance = 0.0f;       // 碰撞距离
-    glm::vec3 Point = {0,0,0};  // 碰撞点
-    glm::vec3 Normal = {0,1,0}; // 碰撞法线
+    f32  Distance = 0.0f;
+    glm::vec3 Point = {0,0,0};
+    glm::vec3 Normal = {0,1,0};
 };
 
 struct CollisionPair {
     u32 EntityA = 0;
     u32 EntityB = 0;
+    glm::vec3 Normal = {0,0,0};
+    f32 Penetration = 0.0f;
+};
+
+// ── 碰撞事件状态 ────────────────────────────────────────────
+
+enum class CollisionState : u8 {
+    Enter,   // 本帧刚开始碰撞
+    Stay,    // 持续碰撞中
+    Exit,    // 本帧刚结束碰撞
+};
+
+struct CollisionEventData {
+    u32 EntityA = 0;
+    u32 EntityB = 0;
+    CollisionState State = CollisionState::Enter;
     glm::vec3 Normal = {0,0,0};
     f32 Penetration = 0.0f;
 };
@@ -74,45 +159,53 @@ class Collision {
 public:
     /// AABB vs AABB
     static bool TestAABB(const AABB& a, const AABB& b);
-
-    /// AABB vs AABB（带穿透信息）
     static bool TestAABB(const AABB& a, const AABB& b,
                          glm::vec3& outNormal, f32& outPenetration);
 
-    /// 射线 vs AABB
-    static HitResult RaycastAABB(const Ray& ray, const AABB& aabb);
+    /// 球 vs 球
+    static bool TestSpheres(const Sphere& a, const Sphere& b,
+                            glm::vec3& outNormal, f32& outPenetration);
+
+    /// 球 vs AABB
+    static bool TestSphereAABB(const Sphere& s, const AABB& b,
+                               glm::vec3& outNormal, f32& outPenetration);
+
+    /// 胶囊 vs 胶囊
+    static bool TestCapsules(const Capsule& a, const Capsule& b,
+                             glm::vec3& outNormal, f32& outPenetration);
+
+    /// 胶囊 vs AABB
+    static bool TestCapsuleAABB(const Capsule& cap, const AABB& aabb,
+                                glm::vec3& outNormal, f32& outPenetration);
+
+    /// 胶囊 vs 球
+    static bool TestCapsuleSphere(const Capsule& cap, const Sphere& sph,
+                                  glm::vec3& outNormal, f32& outPenetration);
 
     /// 点 vs 球
     static bool TestPointSphere(const glm::vec3& point,
                                 const glm::vec3& center, f32 radius);
 
-    /// 球 vs 球（带穿透信息）
-    static bool TestSpheres(const Sphere& a, const Sphere& b,
-                            glm::vec3& outNormal, f32& outPenetration);
-
-    /// 球 vs AABB（带穿透信息）
-    static bool TestSphereAABB(const Sphere& s, const AABB& b,
-                               glm::vec3& outNormal, f32& outPenetration);
-
-    /// 射线 vs 平面 (y = height)
+    /// 射线检测
+    static HitResult RaycastAABB(const Ray& ray, const AABB& aabb);
+    static HitResult RaycastSphere(const Ray& ray, const Sphere& sphere);
+    static HitResult RaycastCapsule(const Ray& ray, const Capsule& capsule);
     static HitResult RaycastPlane(const Ray& ray, f32 height = 0.0f);
 
-    /// 射线 vs 球
-    static HitResult RaycastSphere(const Ray& ray, const Sphere& sphere);
+    /// 碰撞层检测：两个层是否可以碰撞
+    static bool LayersCanCollide(u16 layerA, u16 maskA, u16 layerB, u16 maskB) {
+        return (layerA & maskB) != 0 && (layerB & maskA) != 0;
+    }
 };
 
-// ── 空间哈希网格（宽相碰撞粗筛）────────────────────
+// ── 空间哈希网格 ────────────────────────────────────────────
 
 class SpatialHash {
 public:
     SpatialHash(f32 cellSize = 4.0f) : m_CellSize(cellSize) {}
 
     void Clear();
-
-    /// 插入实体 AABB
     void Insert(u32 entity, const AABB& worldAABB);
-
-    /// 获取潜在碰撞对 (去重)
     std::vector<std::pair<u32, u32>> GetPotentialPairs() const;
 
 private:

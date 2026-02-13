@@ -4,8 +4,7 @@ cmake-build-*/
 out/
 
 # ── 构建日志 / 临时文件 ──────────────────────────────────────
-build_log.txt
-build_err.txt
+build_*.txt
 cmake_log.txt
 
 # ── CMake 生成物 ─────────────────────────────────────────────

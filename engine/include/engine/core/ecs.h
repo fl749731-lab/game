@@ -85,6 +85,17 @@ struct AIComponent : public Component {
     f32 AttackRange = 2.0f;
 };
 
+// ── 小队组件 ────────────────────────────────────────────────
+
+struct SquadComponent : public Component {
+    u32 SquadID = 0;                    // 所属小队 ID（0 = 无小队）
+    u32 LeaderEntity = INVALID_ENTITY;  // 队长实体 ID
+    u32 CommanderEntity = INVALID_ENTITY; // 指挥官实体 ID
+    std::string Role = "soldier";       // "commander" | "leader" | "soldier"
+    std::string CurrentOrder;           // 当前接收到的命令（JSON字符串）
+    std::string OrderStatus = "idle";   // "idle" | "executing" | "completed" | "failed"
+};
+
 struct ScriptComponent : public Component {
     std::string ScriptModule;                                  // Python 模块名
     bool Initialized = false;                                  // on_create 是否已调用
@@ -353,17 +364,20 @@ private:
 
 // ── 内置系统 ────────────────────────────────────────────────
 
-/// 运动系统：根据速度更新位置
+/// 运动系统：根据速度更新位置（SoA 直接遍历）
 class MovementSystem : public System {
 public:
     void Update(ECSWorld& world, f32 dt) override {
-        world.ForEach<VelocityComponent>([&](Entity e, VelocityComponent& vel) {
-            auto* tr = world.GetComponent<TransformComponent>(e);
-            if (!tr) return;
+        auto& pool = world.GetComponentArray<VelocityComponent>();
+        u32 count = pool.Size();
+        for (u32 i = 0; i < count; i++) {
+            VelocityComponent& vel = pool.Data(i);
+            auto* tr = world.GetComponent<TransformComponent>(pool.GetEntity(i));
+            if (!tr) continue;
             tr->X += vel.VX * dt;
             tr->Y += vel.VY * dt;
             tr->Z += vel.VZ * dt;
-        });
+        }
     }
     const char* GetName() const override { return "MovementSystem"; }
 };
@@ -377,11 +391,15 @@ struct LifetimeComponent : public Component {
 class LifetimeSystem : public System {
 public:
     void Update(ECSWorld& world, f32 dt) override {
-        m_ToDestroy.clear(); // clear 保留容量，不重新分配
-        world.ForEach<LifetimeComponent>([&](Entity e, LifetimeComponent& lc) {
+        m_ToDestroy.clear();
+        auto& pool = world.GetComponentArray<LifetimeComponent>();
+        u32 count = pool.Size();
+        for (u32 i = 0; i < count; i++) {
+            LifetimeComponent& lc = pool.Data(i);
             lc.TimeRemaining -= dt;
-            if (lc.TimeRemaining <= 0) m_ToDestroy.push_back(e);
-        });
+            if (lc.TimeRemaining <= 0)
+                m_ToDestroy.push_back(pool.GetEntity(i));
+        }
         for (auto e : m_ToDestroy) {
             world.DestroyEntity(e);
         }
