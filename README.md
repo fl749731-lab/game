@@ -13,16 +13,21 @@
 
 | 特性 | 状态 | 说明 |
 |------|:----:|------|
+| 延迟渲染 | ✅ | G-Buffer MRT + 全屏延迟光照 Pass |
+| PBR 材质 | ✅ | Cook-Torrance GGX BRDF (Metallic/Roughness) |
+| SSAO | ✅ | 32 采样半球核 + 4×4 噪声旋转 + 模糊 |
+| SSR | ✅ | 视图空间 Ray Marching 64 步 + HDR 采样 |
+| 实例化渲染 | ✅ | Dynamic VBO + glDrawArraysInstanced (万级实例) |
 | HDR + Bloom | ✅ | Reinhard 色调映射 + 高斯模糊泛光 |
 | 阴影映射 | ✅ | 方向光 Shadow Map + PCF 软阴影 |
 | 法线贴图 | ✅ | TBN 矩阵，CPU 预计算 |
 | 粒子系统 | ✅ | GPU Instancing |
 | 程序化天空盒 | ✅ | 三层渐变 + 太阳光晕 |
 | ECS 架构 | ✅ | Entity-Component-System |
-| AABB 物理 | ✅ | 碰撞检测 + 射线检测 |
-| 场景编辑器 | ✅ | ImGui 集成 |
+| AABB 物理 | ✅ | 碰撞检测 + 射线检测 + Sphere 碰撞 |
+| 场景编辑器 | ✅ | ImGui 集成 (8 组件 Inspector + Performance) |
 | Python AI | ✅ | pybind11 桥接 |
-| 音频系统 | ✅ | miniaudio |
+| 音频系统 | ✅ | miniaudio (3D 空间音频) |
 | glTF 加载 | ✅ | cgltf |
 | OBJ 加载 | ✅ | 含切线计算 |
 | 视锥剔除 | ✅ | — |
@@ -53,10 +58,12 @@ docs/         ← 文档与基准测试
 
 ```text
 Pass 0: Shadow Map       → 方向光深度贴图 (PCF 软阴影)
-Pass 1: G-Buffer 几何     → MRT (Position / Normal / Albedo+Shininess / Emissive)
-Pass 2: 延迟光照          → 全屏四边形采样 G-Buffer + 阴影 → HDR FBO
-Pass 3: 前向叠加          → 天空盒 / 透明物 / 自发光 / 粒子 / 调试线
-Pass 4: Bloom + 后处理    → 亮度提取 → 5-tap 双向高斯模糊 (半分辨率) → Reinhard 色调映射 → 屏幕
+Pass 1: G-Buffer 几何     → MRT (Position / Normal / Albedo+Metallic / Emissive+Roughness)
+Pass 2: SSAO             → 32 采样半球核 + 4×4 旋转噪声 → Blur
+Pass 3: 延迟 PBR 光照     → G-Buffer + 阴影 + AO → HDR FBO
+Pass 4: SSR              → 视图空间 Ray Marching → 反射混合
+Pass 5: 前向叠加          → 天空盒 / 透明物 / 自发光 / 粒子 / 调试线
+Pass 6: Bloom + 后处理    → 亮度提取 → 高斯模糊 → Reinhard 色调映射 → 屏幕
 ```
 
 ### 资源管理
@@ -142,7 +149,11 @@ cd build && ctest --output-on-failure
 
 ### 渲染
 
-- 前向渲染管线 (Lit + Emissive 双 Shader)
+- **延迟渲染管线** (G-Buffer MRT + 全屏延迟 PBR 光照)
+- **PBR 材质** (Cook-Torrance GGX BRDF, Metallic/Roughness 工作流)
+- **SSAO** (Screen Space Ambient Occlusion, 32 采样 + Blur)
+- **SSR** (Screen Space Reflections, 视图空间 Ray Marching)
+- **实例化渲染** (Dynamic VBO + glDrawArraysInstanced, 万级实例)
 - HDR 帧缓冲 + Reinhard 色调映射 + 伽马校正
 - Bloom 后处理 (亮度提取 → 高斯模糊 → 混合)
 - 阴影映射 (方向光 Shadow Map + PCF 软阴影)
