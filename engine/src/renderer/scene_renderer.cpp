@@ -327,7 +327,7 @@ void SceneRenderer::LightingPass(Scene& scene, PerspectiveCamera& camera) {
 
 void SceneRenderer::ForwardPass(Scene& scene, PerspectiveCamera& camera) {
     // 直接在 HDR FBO 上继续绘制（光照 Pass 已经绑定了 HDR FBO）
-    // 前向叠加 Pass 不需要深度测试（天空盒在最远处，粒子/调试线也不需要严格深度遮挡）
+    // 前向叠加 Pass: 复用 G-Buffer 深度进行深度测试 (天空盒/粒子/调试线)
     Renderer::SetViewport(0, 0, s_Width, s_Height);
 
 
