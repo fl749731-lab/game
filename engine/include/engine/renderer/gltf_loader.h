@@ -16,7 +16,12 @@ struct GltfMaterial {
     f32 Metallic  = 0.0f;
     f32 Roughness = 1.0f;
     f32 Emissive  = 0.0f;
+    glm::vec3 EmissiveColor = {0, 0, 0};
     std::string Name = "Default";
+    // 纹理路径 (空=无纹理)
+    std::string BaseColorTexPath;
+    std::string NormalTexPath;
+    std::string MetallicRoughnessTexPath;
 };
 
 // ── glTF 网格 + 材质 ───────────────────────────────────────

@@ -115,4 +115,63 @@ void ResourceManager::PrintStats() {
         s_Shaders.size(), s_Textures.size(), s_Meshes.size());
 }
 
+// ── Model (glTF / OBJ) ────────────────────────────────────
+
+std::vector<std::string> ResourceManager::LoadModel(const std::string& filepath) {
+    std::vector<std::string> names;
+
+    // 检测后缀
+    std::string ext;
+    auto dot = filepath.rfind('.');
+    if (dot != std::string::npos) {
+        ext = filepath.substr(dot);
+        // 转小写
+        for (auto& c : ext) c = (char)tolower((unsigned char)c);
+    }
+
+    if (ext == ".gltf" || ext == ".glb") {
+        // glTF 加载
+        auto meshes = GltfLoader::Load(filepath);
+        for (auto& gm : meshes) {
+            std::string meshName = "gltf_" + gm.Name;
+            StoreMesh(meshName, std::move(gm.MeshData));
+
+            // 自动加载纹理
+            if (!gm.Material.BaseColorTexPath.empty()) {
+                LoadTexture(meshName + "_albedo", gm.Material.BaseColorTexPath);
+            }
+            if (!gm.Material.NormalTexPath.empty()) {
+                LoadTexture(meshName + "_normal", gm.Material.NormalTexPath);
+            }
+            if (!gm.Material.MetallicRoughnessTexPath.empty()) {
+                LoadTexture(meshName + "_mr", gm.Material.MetallicRoughnessTexPath);
+            }
+
+            names.push_back(meshName);
+        }
+        LOG_INFO("[资源] 模型加载完成: %s (%zu 个 mesh)", filepath.c_str(), names.size());
+    }
+    else if (ext == ".obj") {
+        // OBJ 加载
+        auto mesh = Mesh::LoadOBJ(filepath);
+        if (mesh) {
+            // 提取文件名作为 mesh 名
+            std::string meshName = filepath;
+            auto lastSlash = meshName.find_last_of("/\\");
+            if (lastSlash != std::string::npos) meshName = meshName.substr(lastSlash + 1);
+            auto dotPos = meshName.rfind('.');
+            if (dotPos != std::string::npos) meshName = meshName.substr(0, dotPos);
+
+            StoreMesh(meshName, std::move(mesh));
+            names.push_back(meshName);
+            LOG_INFO("[资源] OBJ 加载完成: %s", filepath.c_str());
+        }
+    }
+    else {
+        LOG_ERROR("[资源] 不支持的模型格式: %s", filepath.c_str());
+    }
+
+    return names;
+}
+
 } // namespace Engine
