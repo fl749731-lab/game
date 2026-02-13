@@ -1,10 +1,93 @@
 [  2%] Built target glad
 [ 33%] Built target glfw
 [ 43%] Built target imgui
-[ 46%] Built target glm
-[ 47%] Building CXX object engine/CMakeFiles/Engine.dir/src/audio/audio_engine.cpp.obj
-[ 49%] Linking CXX static library libEngine.a
-[ 97%] Built target Engine
-[ 98%] Building CXX object sandbox/CMakeFiles/Sandbox.dir/src/main.cpp.obj
-[100%] Linking CXX executable Sandbox.exe
-[100%] Built target Sandbox
+[ 45%] Built target glm
+[ 47%] Building CXX object engine/CMakeFiles/Engine.dir/src/renderer/scene_renderer.cpp.obj
+cmake : E:\game\engi
+ne\src\renderer\scen
+e_renderer.cpp: In s
+tatic member functio
+n 'static void Engin
+e::SceneRenderer::Re
+nderScene(Engine::Sc
+ene&, Engine::Perspe
+ctiveCamera&)':
+???? ?:1 ??: 1
++ cmake --build buil
+d 2>&1 | Out-File E:
+\game\build_full.txt
+ -Encoding  ...
++ ~~~~~~~~~~~~~~~~~~
+~~~~~~
+    + CategoryInfo  
+            : NotS  
+  pecified: (E:\g   
+ ame\engine\...c    
+tiveCamera&)'::    S
+tring) [], Rem    ot
+eException
+    + FullyQualifie 
+   dErrorId : Nati  
+  veCommandError
+ 
+E:\game\engine\src\r
+enderer\scene_render
+er.cpp:205:46: error
+: 'class Engine::Per
+spectiveCamera' has 
+no member named 'Get
+Projection'; did you
+ mean 'SetProjection
+'?
+  205 |         SSAO
+::Generate(glm::valu
+e_ptr(camera.GetProj
+ection()));
+      |             
+                    
+             ^~~~~~~
+~~~~~~
+      |             
+                    
+             SetProj
+ection
+E:\game\engine\src\r
+enderer\scene_render
+er.cpp: In static me
+mber function 'stati
+c void Engine::Scene
+Renderer::LightingPa
+ss(Engine::Scene&, E
+ngine::PerspectiveCa
+mera&)':
+E:\game\engine\src\r
+enderer\scene_render
+er.cpp:272:25: error
+: 'GL_TEXTURE5' was 
+not declared in this
+ scope; did you mean
+ 'GL_TEXTURE0'?
+  272 |         glAc
+tiveTexture(GL_TEXTU
+RE5);
+      |             
+            ^~~~~~~~
+~~~
+      |             
+            GL_TEXTU
+RE0
+mingw32-make[2]: ***
+ [engine\CMakeFiles\
+Engine.dir\build.mak
+e:499: engine/CMakeF
+iles/Engine.dir/src/
+renderer/scene_rende
+rer.cpp.obj] Error 1
+mingw32-make[1]: ***
+ [CMakeFiles\Makefil
+e2:383: engine/CMake
+Files/Engine.dir/all
+] Error 2
+mingw32-make: *** [M
+akefile:90: all] Err
+or 2

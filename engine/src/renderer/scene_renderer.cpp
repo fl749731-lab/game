@@ -4,6 +4,7 @@
 #include "engine/renderer/post_process.h"
 #include "engine/renderer/bloom.h"
 #include "engine/renderer/skybox.h"
+#include "engine/renderer/ssao.h"
 #include "engine/renderer/particle.h"
 #include "engine/renderer/texture.h"
 #include "engine/renderer/shadow_map.h"
@@ -142,6 +143,7 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
     PostProcess::SetExposure(s_Exposure);
     Bloom::Init(config.Width, config.Height);
     ShadowMap::Init();
+    SSAO::Init(config.Width, config.Height);
 
     LOG_INFO("[SceneRenderer] 初始化完成 (%ux%u) — 延迟渲染管线", s_Width, s_Height);
 }
@@ -157,6 +159,7 @@ void SceneRenderer::Shutdown() {
     s_LitShader.reset();
     Bloom::Shutdown();
     ShadowMap::Shutdown();
+    SSAO::Shutdown();
     PostProcess::Shutdown();
     LOG_DEBUG("[SceneRenderer] 已清理");
 }
@@ -167,6 +170,7 @@ void SceneRenderer::Resize(u32 width, u32 height) {
     if (s_HDR_FBO) s_HDR_FBO->Resize(width, height);
     GBuffer::Resize(width, height);
     Bloom::Resize(width, height);
+    SSAO::Resize(width, height);
 }
 
 // ── 核心渲染方法 ────────────────────────────────────────────
@@ -194,6 +198,11 @@ void SceneRenderer::RenderScene(Scene& scene, PerspectiveCamera& camera) {
 
         Profiler::EndTimer("Render");
         return;
+    }
+
+    // SSAO Pass (在 Geometry 和 Lighting 之间)
+    if (SSAO::IsEnabled()) {
+        SSAO::Generate(glm::value_ptr(camera.GetProjectionMatrix()));
     }
 
     LightingPass(scene, camera);
@@ -257,6 +266,16 @@ void SceneRenderer::LightingPass(Scene& scene, PerspectiveCamera& camera) {
     s_DeferredShader->SetInt("gNormal", 1);
     s_DeferredShader->SetInt("gAlbedoSpec", 2);
     s_DeferredShader->SetInt("gEmissive", 3);
+
+    // SSAO 纹理 (纹理单元 5)
+    if (SSAO::IsEnabled()) {
+        glActiveTexture(GL_TEXTURE0 + 5);
+        glBindTexture(GL_TEXTURE_2D, SSAO::GetOcclusionTexture());
+        s_DeferredShader->SetInt("uSSAO", 5);
+        s_DeferredShader->SetInt("uSSAOEnabled", 1);
+    } else {
+        s_DeferredShader->SetInt("uSSAOEnabled", 0);
+    }
 
     // 设置光照 Uniform
     SetupLightUniforms(scene, s_DeferredShader.get(), camera);

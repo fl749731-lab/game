@@ -345,6 +345,10 @@ uniform mat4  uLightSpaceMat;
 uniform vec3  uViewPos;
 uniform float uAmbientStrength;
 
+// SSAO
+uniform sampler2D uSSAO;
+uniform int uSSAOEnabled;
+
 // ── PBR 常量 ─────────────────────────────────────────
 const float PI = 3.14159265359;
 
@@ -448,8 +452,9 @@ void main() {
         shadow = CalcShadow(FragPos, N, L);
     }
 
-    // ── 环境光（简化 IBL：常量环境） ─────────────
-    vec3 ambient = uAmbientStrength * Albedo;
+    // ── 环境光（简化 IBL：常量环境 × AO） ─────────
+    float ao = (uSSAOEnabled == 1) ? texture(uSSAO, vTexCoord).r : 1.0;
+    vec3 ambient = uAmbientStrength * Albedo * ao;
 
     // ── 方向光 PBR ──────────────────────────────
     vec3 result = ambient;
