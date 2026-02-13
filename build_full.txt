@@ -2,6 +2,8 @@
 [ 33%] Built target glfw
 [ 43%] Built target imgui
 [ 46%] Built target glm
+[ 47%] Building CXX object engine/CMakeFiles/Engine.dir/src/editor/editor.cpp.obj
+[ 49%] Linking CXX static library libEngine.a
 [ 97%] Built target Engine
 [ 98%] Building CXX object sandbox/CMakeFiles/Sandbox.dir/src/main.cpp.obj
 [100%] Linking CXX executable Sandbox.exe

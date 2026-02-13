@@ -2,6 +2,9 @@
 #include "engine/core/ecs.h"
 #include "engine/core/log.h"
 #include "engine/renderer/light.h"
+#include "engine/physics/physics_world.h"
+
+#include <glad/glad.h>
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -51,6 +54,7 @@ void Editor::Render(Scene& scene, Entity& selectedEntity) {
     DrawSceneHierarchy(scene, selectedEntity);
     DrawInspector(scene.GetWorld(), selectedEntity);
     DrawLightEditor(scene);
+    DrawPerformance(scene);
 }
 
 void Editor::EndFrame() {
@@ -183,6 +187,34 @@ void Editor::DrawInspector(ECSWorld& world, Entity entity) {
         }
     }
 
+    // RigidBody
+    if (auto* rb = world.GetComponent<RigidBodyComponent>(entity)) {
+        if (ImGui::CollapsingHeader("Rigid Body")) {
+            ImGui::DragFloat("Mass", &rb->Mass, 0.1f, 0.01f, 10000.0f);
+            ImGui::DragFloat("Restitution", &rb->Restitution, 0.01f, 0.0f, 1.0f);
+            ImGui::DragFloat("Friction", &rb->Friction, 0.01f, 0.0f, 1.0f);
+            ImGui::Checkbox("Is Static", &rb->IsStatic);
+            ImGui::Checkbox("Use Gravity", &rb->UseGravity);
+            if (rb->UseGravity) {
+                ImGui::DragFloat3("Gravity Override", &rb->GravityOverride.x, 0.1f);
+            }
+            float vel[3] = {rb->Velocity.x, rb->Velocity.y, rb->Velocity.z};
+            ImGui::DragFloat3("RB Velocity", vel, 0.1f);
+            rb->Velocity = {vel[0], vel[1], vel[2]};
+        }
+    }
+
+    // Collider
+    if (auto* col = world.GetComponent<ColliderComponent>(entity)) {
+        if (ImGui::CollapsingHeader("Collider")) {
+            ImGui::Checkbox("Is Trigger", &col->IsTrigger);
+            ImGui::DragFloat3("AABB Min", &col->LocalBounds.Min.x, 0.1f);
+            ImGui::DragFloat3("AABB Max", &col->LocalBounds.Max.x, 0.1f);
+            glm::vec3 size = col->LocalBounds.Max - col->LocalBounds.Min;
+            ImGui::Text("Size: %.1f x %.1f x %.1f", size.x, size.y, size.z);
+        }
+    }
+
     ImGui::End();
 }
 
@@ -235,6 +267,34 @@ void Editor::DrawLightEditor(Scene& scene) {
             ImGui::PopID();
         }
     }
+
+    ImGui::End();
+}
+
+// ── 性能监控 ─────────────────────────────────────────────────
+
+void Editor::DrawPerformance(Scene& scene) {
+    ImGui::Begin("Performance");
+
+    // FPS / 帧时间
+    static float fpsHistory[120] = {};
+    static int fpsIdx = 0;
+    float fps = ImGui::GetIO().Framerate;
+    fpsHistory[fpsIdx] = fps;
+    fpsIdx = (fpsIdx + 1) % 120;
+
+    ImGui::Text("FPS: %.1f", fps);
+    ImGui::Text("Frame: %.3f ms", 1000.0f / fps);
+    ImGui::PlotLines("FPS", fpsHistory, 120, fpsIdx, nullptr, 0.0f, 120.0f, ImVec2(0, 50));
+
+    ImGui::Separator();
+    ImGui::Text("Entities: %u", scene.GetEntityCount());
+    ImGui::Text("Point Lights: %u", (u32)scene.GetPointLights().size());
+    ImGui::Text("Spot Lights: %u", (u32)scene.GetSpotLights().size());
+
+    ImGui::Separator();
+    ImGui::Text("OpenGL: %s", (const char*)glGetString(GL_VERSION));
+    ImGui::Text("GPU: %s", (const char*)glGetString(GL_RENDERER));
 
     ImGui::End();
 }
