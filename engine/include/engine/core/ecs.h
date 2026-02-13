@@ -279,15 +279,13 @@ private:
 class MovementSystem : public System {
 public:
     void Update(ECSWorld& world, f32 dt) override {
-        for (auto e : world.GetEntities()) {
-            auto* transform = world.GetComponent<TransformComponent>(e);
-            auto* velocity = world.GetComponent<VelocityComponent>(e);
-            if (transform && velocity) {
-                transform->X += velocity->VX * dt;
-                transform->Y += velocity->VY * dt;
-                transform->Z += velocity->VZ * dt;
-            }
-        }
+        world.ForEach<VelocityComponent>([&](Entity e, VelocityComponent& vel) {
+            auto* tr = world.GetComponent<TransformComponent>(e);
+            if (!tr) return;
+            tr->X += vel.VX * dt;
+            tr->Y += vel.VY * dt;
+            tr->Z += vel.VZ * dt;
+        });
     }
     const char* GetName() const override { return "MovementSystem"; }
 };
@@ -302,13 +300,10 @@ class LifetimeSystem : public System {
 public:
     void Update(ECSWorld& world, f32 dt) override {
         m_ToDestroy.clear(); // clear 保留容量，不重新分配
-        for (auto e : world.GetEntities()) {
-            auto* lc = world.GetComponent<LifetimeComponent>(e);
-            if (lc) {
-                lc->TimeRemaining -= dt;
-                if (lc->TimeRemaining <= 0) m_ToDestroy.push_back(e);
-            }
-        }
+        world.ForEach<LifetimeComponent>([&](Entity e, LifetimeComponent& lc) {
+            lc.TimeRemaining -= dt;
+            if (lc.TimeRemaining <= 0) m_ToDestroy.push_back(e);
+        });
         for (auto e : m_ToDestroy) {
             world.DestroyEntity(e);
         }
