@@ -254,14 +254,24 @@ void SceneRenderer::ShadowPass(Scene& scene, PerspectiveCamera& camera) {
     auto depthShader = ShadowMap::GetDepthShader();
     auto& world = scene.GetWorld();
 
+    // 光空间视锥剔除
+    Frustum lightFrustum;
+    lightFrustum.ExtractFromVP(ShadowMap::GetLightSpaceMatrix());
+
     for (auto e : world.GetEntities()) {
         auto* tr = world.GetComponent<TransformComponent>(e);
         auto* rc = world.GetComponent<RenderComponent>(e);
         if (!tr || !rc) continue;
 
-        glm::mat4 model = tr->WorldMatrix;
+        // 剔除光照视锥外的实体
+        glm::vec3 wp = tr->GetWorldPosition();
+        AABB worldAABB;
+        worldAABB.Min = wp - tr->GetScale() * 0.5f;
+        worldAABB.Max = wp + tr->GetScale() * 0.5f;
+        if (rc->MeshType != "plane" && !lightFrustum.IsAABBVisible(worldAABB))
+            continue;
 
-        depthShader->SetMat4("uModel", glm::value_ptr(model));
+        depthShader->SetMat4("uModel", glm::value_ptr(tr->WorldMatrix));
         auto* mesh = ResourceManager::GetMesh(rc->MeshType);
         if (mesh) mesh->Draw();
     }

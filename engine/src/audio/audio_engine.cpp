@@ -129,12 +129,9 @@ void AudioEngine::SetMusicVolume(f32 volume) {
     }
 }
 
-// ── 音效 ────────────────────────────────────────────────────
+// ── SFX 清理 ────────────────────────────────────────────────
 
-void AudioEngine::PlaySFX(const std::string& filepath, f32 volume) {
-    if (!s_Initialized) return;
-
-    // 每16次播放清理一次已完成音效（避免每次都遍历）
+static void CleanupFinishedSFX() {
     if ((++s_SFXPlayCount & 0xF) == 0) {
         std::lock_guard<std::mutex> lock(s_SFXMutex);
         s_ActiveSFX.erase(
@@ -149,8 +146,14 @@ void AudioEngine::PlaySFX(const std::string& filepath, f32 volume) {
                 }),
             s_ActiveSFX.end());
     }
+}
 
-    // 使用 ma_sound 创建并设置音量
+// ── 音效 ────────────────────────────────────────────────────
+
+void AudioEngine::PlaySFX(const std::string& filepath, f32 volume) {
+    if (!s_Initialized) return;
+    CleanupFinishedSFX();
+
     auto* sound = new ma_sound();
     if (ma_sound_init_from_file(s_Engine, filepath.c_str(),
                                 MA_SOUND_FLAG_DECODE, nullptr, nullptr,
@@ -162,7 +165,6 @@ void AudioEngine::PlaySFX(const std::string& filepath, f32 volume) {
     ma_sound_set_volume(sound, volume * s_MasterVolume);
     ma_sound_start(sound);
 
-    // 注册到活跃列表以便后续清理
     {
         std::lock_guard<std::mutex> lock(s_SFXMutex);
         s_ActiveSFX.push_back({sound});
@@ -186,22 +188,7 @@ void AudioEngine::SetMasterVolume(f32 volume) {
 
 void AudioEngine::PlaySFX3D(const std::string& filepath, const glm::vec3& position, f32 volume) {
     if (!s_Initialized) return;
-
-    // 定期清理
-    if ((++s_SFXPlayCount & 0xF) == 0) {
-        std::lock_guard<std::mutex> lock(s_SFXMutex);
-        s_ActiveSFX.erase(
-            std::remove_if(s_ActiveSFX.begin(), s_ActiveSFX.end(),
-                [](SFXEntry& e) {
-                    if (e.Sound && ma_sound_at_end(e.Sound)) {
-                        ma_sound_uninit(e.Sound);
-                        delete e.Sound;
-                        return true;
-                    }
-                    return false;
-                }),
-            s_ActiveSFX.end());
-    }
+    CleanupFinishedSFX();
 
     auto* sound = new ma_sound();
     if (ma_sound_init_from_file(s_Engine, filepath.c_str(),
