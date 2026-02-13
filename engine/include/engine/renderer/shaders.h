@@ -235,17 +235,18 @@ inline const char* GBufferFragment = R"(
 #version 450 core
 layout(location = 0) out vec3 gPosition;   // RT0: 世界空间位置
 layout(location = 1) out vec3 gNormal;     // RT1: 世界空间法线
-layout(location = 2) out vec4 gAlbedoSpec; // RT2: Albedo.rgb + Specular
-layout(location = 3) out vec4 gEmissive;   // RT3: Emissive.rgb + Reserved
+layout(location = 2) out vec4 gAlbedoSpec; // RT2: Albedo.rgb + Metallic
+layout(location = 3) out vec4 gEmissive;   // RT3: Emissive.rgb + Roughness
 
 in vec3 vFragPos;
 in vec3 vNormal;
 in vec2 vTexCoord;
 in mat3 vTBN;
 
-uniform vec3  uMatDiffuse;
-uniform vec3  uMatSpecular;
-uniform float uShininess;
+// PBR 材质参数
+uniform vec3  uAlbedo;
+uniform float uMetallic;
+uniform float uRoughness;
 uniform int   uUseTex;
 uniform sampler2D uTex;
 uniform sampler2D uNormalMap;
@@ -268,17 +269,16 @@ void main() {
     }
     gNormal = N;
 
-    // 漫反射颜色 + 高光强度
-    vec3 albedo = uMatDiffuse;
+    // PBR: Albedo + Metallic
+    vec3 albedo = uAlbedo;
     if (uUseTex == 1) albedo = texture(uTex, vTexCoord).rgb;
-    float specPower = uShininess / 256.0; // 归一化到 [0, 1]
-    gAlbedoSpec = vec4(albedo, specPower);
+    gAlbedoSpec = vec4(albedo, uMetallic);
 
-    // 自发光
+    // Emissive + Roughness
     if (uIsEmissive == 1) {
-        gEmissive = vec4(uEmissiveColor * uEmissiveIntensity, 1.0);
+        gEmissive = vec4(uEmissiveColor * uEmissiveIntensity, uRoughness);
     } else {
-        gEmissive = vec4(0.0);
+        gEmissive = vec4(0.0, 0.0, 0.0, uRoughness);
     }
 }
 )";
@@ -306,8 +306,8 @@ in vec2 vTexCoord;
 // G-Buffer 纹理
 uniform sampler2D gPosition;
 uniform sampler2D gNormal;
-uniform sampler2D gAlbedoSpec;
-uniform sampler2D gEmissive;
+uniform sampler2D gAlbedoSpec;  // rgb=Albedo, a=Metallic
+uniform sampler2D gEmissive;    // rgb=Emissive, a=Roughness
 
 // 方向光
 uniform vec3  uDirLightDir;
@@ -345,6 +345,39 @@ uniform mat4  uLightSpaceMat;
 uniform vec3  uViewPos;
 uniform float uAmbientStrength;
 
+// ── PBR 常量 ─────────────────────────────────────────
+const float PI = 3.14159265359;
+
+// GGX/Trowbridge-Reitz 法线分布函数
+float DistributionGGX(vec3 N, vec3 H, float roughness) {
+    float a  = roughness * roughness;
+    float a2 = a * a;
+    float NdotH  = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = PI * denom * denom;
+    return a2 / max(denom, 0.0001);
+}
+
+// Smith-Schlick 几何遮蔽函数
+float GeometrySchlickGGX(float NdotV, float roughness) {
+    float r = (roughness + 1.0);
+    float k = (r * r) / 8.0;
+    return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    return GeometrySchlickGGX(NdotV, roughness) * GeometrySchlickGGX(NdotL, roughness);
+}
+
+// Schlick 菲涅尔近似
+vec3 FresnelSchlick(float cosTheta, vec3 F0) {
+    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// ── 阴影计算 ────────────────────────────────────────
 float CalcShadow(vec3 fragPos, vec3 normal, vec3 lightDir) {
     vec4 lsPos = uLightSpaceMat * vec4(fragPos, 1.0);
     vec3 proj = lsPos.xyz / lsPos.w;
@@ -363,15 +396,40 @@ float CalcShadow(vec3 fragPos, vec3 normal, vec3 lightDir) {
     return shadow / 9.0;
 }
 
+// ── 单光源 PBR 光照计算 ─────────────────────────────
+vec3 CalcPBRLight(vec3 L, vec3 radiance, vec3 N, vec3 V,
+                  vec3 albedo, float metallic, float roughness, vec3 F0) {
+    vec3 H = normalize(V + L);
+    float NDF = DistributionGGX(N, H, roughness);
+    float G   = GeometrySmith(N, V, L, roughness);
+    vec3  F   = FresnelSchlick(max(dot(H, V), 0.0), F0);
+
+    // Cook-Torrance Specular BRDF
+    vec3 numerator = NDF * G * F;
+    float denom = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
+    vec3 specular = numerator / denom;
+
+    // 能量守恒: kS=Fresnel, kD=1-kS (金属无漫反射)
+    vec3 kS = F;
+    vec3 kD = (vec3(1.0) - kS) * (1.0 - metallic);
+
+    float NdotL = max(dot(N, L), 0.0);
+    return (kD * albedo / PI + specular) * radiance * NdotL;
+}
+
 void main() {
     // 从 G-Buffer 采样
     vec3  FragPos   = texture(gPosition,   vTexCoord).rgb;
     vec3  Normal    = texture(gNormal,     vTexCoord).rgb;
     vec3  Albedo    = texture(gAlbedoSpec, vTexCoord).rgb;
-    float Specular  = texture(gAlbedoSpec, vTexCoord).a;
+    float Metallic  = texture(gAlbedoSpec, vTexCoord).a;
     vec3  Emissive  = texture(gEmissive,   vTexCoord).rgb;
+    float Roughness = texture(gEmissive,   vTexCoord).a;
 
-    // 如果法线为零向量说明该像素没有几何体, 丢弃
+    // 限制粗糙度最小值避免高光爆炸
+    Roughness = max(Roughness, 0.04);
+
+    // 如果法线为零向量说明该像素没有几何体
     if (dot(Normal, Normal) < 0.001) {
         FragColor = vec4(0.0, 0.0, 0.0, 1.0);
         return;
@@ -379,7 +437,9 @@ void main() {
 
     vec3 N = normalize(Normal);
     vec3 V = normalize(uViewPos - FragPos);
-    float shininess = Specular * 256.0; // 反归一化
+
+    // F0: 非金属用 0.04，金属用 Albedo
+    vec3 F0 = mix(vec3(0.04), Albedo, Metallic);
 
     // ── 阴影 ────────────────────────────────────
     vec3 L = normalize(-uDirLightDir);
@@ -388,27 +448,24 @@ void main() {
         shadow = CalcShadow(FragPos, N, L);
     }
 
-    // ── 方向光 ──────────────────────────────────
-    float diff = max(dot(N, L), 0.0);
-    vec3 H = normalize(L + V);
-    float spec = pow(max(dot(N, H), 0.0), shininess);
-    vec3 result = (uAmbientStrength * Albedo
-                + (1.0 - shadow) * (diff * Albedo + spec * vec3(Specular)))
-                * uDirLightColor;
+    // ── 环境光（简化 IBL：常量环境） ─────────────
+    vec3 ambient = uAmbientStrength * Albedo;
 
-    // ── 点光源 ──────────────────────────────────
+    // ── 方向光 PBR ──────────────────────────────
+    vec3 result = ambient;
+    result += (1.0 - shadow) * CalcPBRLight(L, uDirLightColor, N, V,
+                                            Albedo, Metallic, Roughness, F0);
+
+    // ── 点光源 PBR ──────────────────────────────
     for (int i = 0; i < uPLCount; i++) {
         vec3 pL = normalize(uPLPos[i] - FragPos);
         float d = length(uPLPos[i] - FragPos);
         float att = 1.0 / (uPLConstant[i] + uPLLinear[i]*d + uPLQuadratic[i]*d*d);
-        float pDiff = max(dot(N, pL), 0.0);
-        vec3 pH = normalize(pL + V);
-        float pSpec = pow(max(dot(N, pH), 0.0), shininess);
-        result += (pDiff * Albedo + pSpec * vec3(Specular))
-                * uPLColor[i] * uPLIntensity[i] * att;
+        vec3 radiance = uPLColor[i] * uPLIntensity[i] * att;
+        result += CalcPBRLight(pL, radiance, N, V, Albedo, Metallic, Roughness, F0);
     }
 
-    // ── 聚光灯 ──────────────────────────────────
+    // ── 聚光灯 PBR ──────────────────────────────
     for (int i = 0; i < uSLCount; i++) {
         vec3 sL = normalize(uSLPos[i] - FragPos);
         float d = length(uSLPos[i] - FragPos);
@@ -416,11 +473,8 @@ void main() {
         float epsilon = max(uSLInnerCut[i] - uSLOuterCut[i], 0.001);
         float spotAtt = clamp((theta - uSLOuterCut[i]) / epsilon, 0.0, 1.0);
         float att = 1.0 / (uSLConstant[i] + uSLLinear[i]*d + uSLQuadratic[i]*d*d);
-        float sDiff = max(dot(N, sL), 0.0);
-        vec3 sH = normalize(sL + V);
-        float sSpec = pow(max(dot(N, sH), 0.0), shininess);
-        result += (sDiff * Albedo + sSpec * vec3(Specular))
-                * uSLColor[i] * uSLIntensity[i] * att * spotAtt;
+        vec3 radiance = uSLColor[i] * uSLIntensity[i] * att * spotAtt;
+        result += CalcPBRLight(sL, radiance, N, V, Albedo, Metallic, Roughness, F0);
     }
 
     // ── 自发光叠加 (HDR) ────────────────────────
@@ -452,21 +506,24 @@ uniform sampler2D gPosition;
 uniform sampler2D gNormal;
 uniform sampler2D gAlbedoSpec;
 uniform sampler2D gEmissive;
-uniform int uDebugMode; // 0=Position, 1=Normal, 2=Albedo, 3=Specular, 4=Emissive, 5=Depth
+uniform int uDebugMode; // 0=Position, 1=Normal, 2=Albedo, 3=Metallic, 4=Roughness, 5=Emissive
 
 void main() {
     vec3 color;
     if (uDebugMode == 0) {
-        color = texture(gPosition, vTexCoord).rgb * 0.1; // 缩放使之可见
+        color = texture(gPosition, vTexCoord).rgb * 0.1;
     } else if (uDebugMode == 1) {
-        color = texture(gNormal, vTexCoord).rgb * 0.5 + 0.5; // [-1,1] -> [0,1]
+        color = texture(gNormal, vTexCoord).rgb * 0.5 + 0.5;
     } else if (uDebugMode == 2) {
         color = texture(gAlbedoSpec, vTexCoord).rgb;
     } else if (uDebugMode == 3) {
-        float s = texture(gAlbedoSpec, vTexCoord).a;
-        color = vec3(s);
+        float m = texture(gAlbedoSpec, vTexCoord).a; // Metallic
+        color = vec3(m);
     } else if (uDebugMode == 4) {
-        color = texture(gEmissive, vTexCoord).rgb;
+        float r = texture(gEmissive, vTexCoord).a; // Roughness
+        color = vec3(r);
+    } else if (uDebugMode == 5) {
+        color = texture(gEmissive, vTexCoord).rgb; // Emissive
     }
     FragColor = vec4(color, 1.0);
 }

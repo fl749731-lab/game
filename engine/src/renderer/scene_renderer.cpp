@@ -392,12 +392,12 @@ void SceneRenderer::RenderEntitiesDeferred(Scene& scene, PerspectiveCamera& came
         glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(model)));
         s_GBufferShader->SetMat3("uNormalMat", glm::value_ptr(normalMat));
 
-        // 材质
+        // 材质 (PBR)
         auto* mat = world.GetComponent<MaterialComponent>(e);
         if (mat) {
-            s_GBufferShader->SetVec3("uMatDiffuse", mat->DiffuseR, mat->DiffuseG, mat->DiffuseB);
-            s_GBufferShader->SetVec3("uMatSpecular", mat->SpecularR, mat->SpecularG, mat->SpecularB);
-            s_GBufferShader->SetFloat("uShininess", mat->Shininess);
+            s_GBufferShader->SetVec3("uAlbedo", mat->DiffuseR, mat->DiffuseG, mat->DiffuseB);
+            s_GBufferShader->SetFloat("uMetallic", mat->Metallic);
+            s_GBufferShader->SetFloat("uRoughness", mat->Roughness);
 
             if (!mat->TextureName.empty()) {
                 s_GBufferShader->SetInt("uUseTex", 1);
@@ -423,10 +423,10 @@ void SceneRenderer::RenderEntitiesDeferred(Scene& scene, PerspectiveCamera& came
                 s_GBufferShader->SetInt("uIsEmissive", 0);
             }
         } else {
-            // 旧兼容路径
-            s_GBufferShader->SetVec3("uMatDiffuse", rc->ColorR, rc->ColorG, rc->ColorB);
-            s_GBufferShader->SetVec3("uMatSpecular", 0.8f, 0.8f, 0.8f);
-            s_GBufferShader->SetFloat("uShininess", rc->Shininess);
+            // 旧兼容路径 → 默认 PBR 参数
+            s_GBufferShader->SetVec3("uAlbedo", rc->ColorR, rc->ColorG, rc->ColorB);
+            s_GBufferShader->SetFloat("uMetallic", 0.0f);   // 非金属
+            s_GBufferShader->SetFloat("uRoughness", 0.5f);  // 中等粗糙
             s_GBufferShader->SetInt("uUseNormalMap", 0);
             s_GBufferShader->SetInt("uIsEmissive", 0);
 
