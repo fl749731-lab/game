@@ -9,6 +9,9 @@
 #include <string>
 #include <algorithm>
 
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
 namespace Engine {
 
 // ── 前向声明 ────────────────────────────────────────────────
@@ -28,9 +31,38 @@ struct Component {
 // ── 常用组件 ────────────────────────────────────────────────
 
 struct TransformComponent : public Component {
+    // ── 局部变换（相对于父节点）──────────────────────────────
     f32 X = 0, Y = 0, Z = 0;
     f32 RotX = 0, RotY = 0, RotZ = 0;
     f32 ScaleX = 1, ScaleY = 1, ScaleZ = 1;
+
+    // ── 层级关系 ─────────────────────────────────────────────
+    Entity Parent = INVALID_ENTITY;
+    std::vector<Entity> Children;
+
+    // ── 世界矩阵缓存（由 TransformSystem 每帧更新）──────────
+    glm::mat4 WorldMatrix = glm::mat4(1.0f);
+    bool WorldMatrixDirty = true;
+
+    // ── 局部矩阵构建 (TRS) ──────────────────────────────────
+    glm::mat4 GetLocalMatrix() const {
+        glm::mat4 m = glm::translate(glm::mat4(1.0f), {X, Y, Z});
+        m = glm::rotate(m, glm::radians(RotY), {0, 1, 0});
+        m = glm::rotate(m, glm::radians(RotX), {1, 0, 0});
+        m = glm::rotate(m, glm::radians(RotZ), {0, 0, 1});
+        m = glm::scale(m, {ScaleX, ScaleY, ScaleZ});
+        return m;
+    }
+
+    // ── 便捷方法 ─────────────────────────────────────────────
+    glm::vec3 GetPosition() const { return {X, Y, Z}; }
+    void SetPosition(const glm::vec3& p) { X = p.x; Y = p.y; Z = p.z; }
+    glm::vec3 GetScale() const { return {ScaleX, ScaleY, ScaleZ}; }
+    void SetScale(const glm::vec3& s) { ScaleX = s.x; ScaleY = s.y; ScaleZ = s.z; }
+    void SetScale(f32 uniform) { ScaleX = ScaleY = ScaleZ = uniform; }
+
+    /// 获取世界位置（从缓存的世界矩阵提取）
+    glm::vec3 GetWorldPosition() const { return glm::vec3(WorldMatrix[3]); }
 };
 
 struct TagComponent : public Component {
@@ -51,6 +83,14 @@ struct AIComponent : public Component {
     std::string State = "Idle";
     f32 DetectRange = 10.0f;
     f32 AttackRange = 2.0f;
+};
+
+struct ScriptComponent : public Component {
+    std::string ScriptModule;                                  // Python 模块名
+    bool Initialized = false;                                  // on_create 是否已调用
+    bool Enabled = true;                                       // 是否启用
+    std::unordered_map<std::string, f32> FloatVars;           // 脚本自定义浮点变量
+    std::unordered_map<std::string, std::string> StringVars;  // 脚本自定义字符串变量
 };
 
 struct RenderComponent : public Component {
@@ -183,6 +223,43 @@ public:
     const std::vector<Entity>& GetEntities() const { return m_Entities; }
     u32 GetEntityCount() const { return (u32)m_Entities.size(); }
 
+    /// 设置实体的父节点（自动维护双向引用）
+    void SetParent(Entity child, Entity parent) {
+        auto* childTr = GetComponent<TransformComponent>(child);
+        if (!childTr) return;
+
+        // 先从旧父节点移除
+        if (childTr->Parent != INVALID_ENTITY) {
+            auto* oldParentTr = GetComponent<TransformComponent>(childTr->Parent);
+            if (oldParentTr) {
+                std::erase(oldParentTr->Children, child);
+            }
+        }
+
+        childTr->Parent = parent;
+        childTr->WorldMatrixDirty = true;
+
+        // 添加到新父节点
+        if (parent != INVALID_ENTITY) {
+            auto* parentTr = GetComponent<TransformComponent>(parent);
+            if (parentTr) {
+                parentTr->Children.push_back(child);
+            }
+        }
+    }
+
+    /// 获取所有根实体（无父节点的实体）
+    std::vector<Entity> GetRootEntities() {
+        std::vector<Entity> roots;
+        for (auto e : m_Entities) {
+            auto* tr = GetComponent<TransformComponent>(e);
+            if (!tr || tr->Parent == INVALID_ENTITY) {
+                roots.push_back(e);
+            }
+        }
+        return roots;
+    }
+
 private:
     template<typename T>
     ComponentPool& GetPool() {
@@ -239,6 +316,35 @@ public:
     const char* GetName() const override { return "LifetimeSystem"; }
 private:
     std::vector<Entity> m_ToDestroy;
+};
+
+/// Transform 层级系统 — 递归计算世界矩阵
+class TransformSystem : public System {
+public:
+    void Update(ECSWorld& world, f32 dt) override {
+        (void)dt;
+        // 只处理根实体（无父节点），递归向下计算
+        for (auto e : world.GetEntities()) {
+            auto* tr = world.GetComponent<TransformComponent>(e);
+            if (tr && tr->Parent == INVALID_ENTITY) {
+                UpdateWorldMatrix(world, e, glm::mat4(1.0f));
+            }
+        }
+    }
+    const char* GetName() const override { return "TransformSystem"; }
+
+private:
+    void UpdateWorldMatrix(ECSWorld& world, Entity e, const glm::mat4& parentWorld) {
+        auto* tr = world.GetComponent<TransformComponent>(e);
+        if (!tr) return;
+
+        tr->WorldMatrix = parentWorld * tr->GetLocalMatrix();
+        tr->WorldMatrixDirty = false;
+
+        for (Entity child : tr->Children) {
+            UpdateWorldMatrix(world, child, tr->WorldMatrix);
+        }
+    }
 };
 
 } // namespace Engine

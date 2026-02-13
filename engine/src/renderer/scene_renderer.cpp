@@ -259,11 +259,7 @@ void SceneRenderer::ShadowPass(Scene& scene, PerspectiveCamera& camera) {
         auto* rc = world.GetComponent<RenderComponent>(e);
         if (!tr || !rc) continue;
 
-        glm::mat4 model = glm::translate(glm::mat4(1.0f), {tr->X, tr->Y, tr->Z});
-        model = glm::rotate(model, glm::radians(tr->RotY), {0, 1, 0});
-        model = glm::rotate(model, glm::radians(tr->RotX), {1, 0, 0});
-        model = glm::rotate(model, glm::radians(tr->RotZ), {0, 0, 1});
-        model = glm::scale(model, {tr->ScaleX, tr->ScaleY, tr->ScaleZ});
+        glm::mat4 model = tr->WorldMatrix;
 
         depthShader->SetMat4("uModel", glm::value_ptr(model));
         auto* mesh = ResourceManager::GetMesh(rc->MeshType);
@@ -420,28 +416,22 @@ void SceneRenderer::RenderEntitiesDeferred(Scene& scene, PerspectiveCamera& came
 
         // 视锥体剪裁
         {
+            glm::vec3 wp = tr->GetWorldPosition();
             AABB worldAABB;
-            worldAABB.Min = glm::vec3(tr->X - tr->ScaleX * 0.5f,
-                                      tr->Y - tr->ScaleY * 0.5f,
-                                      tr->Z - tr->ScaleZ * 0.5f);
-            worldAABB.Max = glm::vec3(tr->X + tr->ScaleX * 0.5f,
-                                      tr->Y + tr->ScaleY * 0.5f,
-                                      tr->Z + tr->ScaleZ * 0.5f);
+            worldAABB.Min = wp - tr->GetScale() * 0.5f;
+            worldAABB.Max = wp + tr->GetScale() * 0.5f;
             if (rc->MeshType != "plane" && !frustum.IsAABBVisible(worldAABB))
                 continue;
         }
 
-        // Model 矩阵
-        glm::mat4 model = glm::translate(glm::mat4(1.0f), {tr->X, tr->Y, tr->Z});
-        model = glm::rotate(model, glm::radians(tr->RotY), {0, 1, 0});
-        model = glm::rotate(model, glm::radians(tr->RotX), {1, 0, 0});
-        model = glm::rotate(model, glm::radians(tr->RotZ), {0, 0, 1});
-        model = glm::scale(model, {tr->ScaleX, tr->ScaleY, tr->ScaleZ});
+        // Model 矩阵（使用 TransformSystem 预计算的世界矩阵）
+        glm::mat4 model = tr->WorldMatrix;
 
-        // 旋转动画
+        // 旋转动画（CenterCube 演示用额外旋转）
         auto* tag = world.GetComponent<TagComponent>(e);
         if (tag && tag->Name == "CenterCube") {
-            model = glm::translate(glm::mat4(1.0f), {tr->X, tr->Y, tr->Z});
+            glm::vec3 wp = tr->GetWorldPosition();
+            model = glm::translate(glm::mat4(1.0f), wp);
             model = glm::rotate(model, t * 0.6f, {0, 1, 0});
             model = glm::rotate(model, t * 0.2f, {1, 0, 0});
         }

@@ -25,8 +25,17 @@ static glm::vec3 AIStateColor(const std::string& state) {
 
 static void BuildDemoScene(Engine::Scene& scene) {
     auto& world = scene.GetWorld();
+    world.AddSystem<Engine::TransformSystem>();  // 必须最先注册
     world.AddSystem<Engine::MovementSystem>();
     world.AddSystem<Engine::LifetimeSystem>();
+    world.AddSystem<Engine::ScriptSystem>();
+
+    // 游戏管理器 (逻辑层核心)
+    {
+        auto gm = scene.CreateEntity("GameManager");
+        auto& sc = world.AddComponent<Engine::ScriptComponent>(gm);
+        sc.ScriptModule = "game_manager";
+    }
 
     // 地面
     {
@@ -38,14 +47,28 @@ static void BuildDemoScene(Engine::Scene& scene) {
     }
 
     // 中央立方体
+    Engine::Entity centerCube;
     {
-        auto e = scene.CreateEntity("CenterCube");
-        auto& t = world.AddComponent<Engine::TransformComponent>(e);
+        centerCube = scene.CreateEntity("CenterCube");
+        auto& t = world.AddComponent<Engine::TransformComponent>(centerCube);
         t.Y = 0.8f;
-        auto& r = world.AddComponent<Engine::RenderComponent>(e);
+        auto& r = world.AddComponent<Engine::RenderComponent>(centerCube);
         r.MeshType = "cube";
         r.ColorR = 0.9f; r.ColorG = 0.35f; r.ColorB = 0.25f;
         r.Shininess = 64;
+    }
+
+    // 子实体：环绕 CenterCube 的小球（层级演示）
+    {
+        auto child = scene.CreateEntity("OrbitChild");
+        auto& t = world.AddComponent<Engine::TransformComponent>(child);
+        t.X = 2.0f; t.Y = 0.0f; t.Z = 0.0f;
+        t.SetScale(0.3f);
+        auto& r = world.AddComponent<Engine::RenderComponent>(child);
+        r.MeshType = "sphere";
+        r.ColorR = 0.3f; r.ColorG = 0.9f; r.ColorB = 0.4f;
+        r.Shininess = 64;
+        world.SetParent(child, centerCube);
     }
 
     // 金属球

@@ -13,6 +13,8 @@
 #include "engine/core/resource_manager.h"
 #include "engine/core/scene.h"
 #include "engine/core/scene_serializer.h"
+#include "engine/core/script_system.h"
+#include "engine/core/prefab.h"
 
 // Platform
 #include "engine/platform/window.h"

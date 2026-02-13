@@ -77,6 +77,44 @@ struct MouseButtonReleasedEvent : public MouseButtonEvent {
     const char* GetName() const override { return "MouseButtonReleased"; }
 };
 
+// ── 碰撞事件 ────────────────────────────────────────────────
+
+struct CollisionEvent : public Event {
+    u32 EntityA = 0;
+    u32 EntityB = 0;
+    f32 PenetrationX = 0, PenetrationY = 0, PenetrationZ = 0;
+    f32 NormalX = 0, NormalY = 0, NormalZ = 0;
+    CollisionEvent(u32 a, u32 b, f32 nx, f32 ny, f32 nz, f32 pen)
+        : EntityA(a), EntityB(b), NormalX(nx), NormalY(ny), NormalZ(nz),
+          PenetrationX(pen * nx), PenetrationY(pen * ny), PenetrationZ(pen * nz) {}
+    const char* GetName() const override { return "Collision"; }
+};
+
+// ── 实体生命周期事件 ─────────────────────────────────────────
+
+struct EntityCreatedEvent : public Event {
+    u32 EntityID = 0;
+    std::string EntityName;
+    EntityCreatedEvent(u32 id, const std::string& name) : EntityID(id), EntityName(name) {}
+    const char* GetName() const override { return "EntityCreated"; }
+};
+
+struct EntityDestroyedEvent : public Event {
+    u32 EntityID = 0;
+    EntityDestroyedEvent(u32 id) : EntityID(id) {}
+    const char* GetName() const override { return "EntityDestroyed"; }
+};
+
+// ── 场景事件 ─────────────────────────────────────────────────
+
+struct SceneChangedEvent : public Event {
+    std::string OldSceneName;
+    std::string NewSceneName;
+    SceneChangedEvent(const std::string& oldName, const std::string& newName)
+        : OldSceneName(oldName), NewSceneName(newName) {}
+    const char* GetName() const override { return "SceneChanged"; }
+};
+
 // ── 事件分发器 ──────────────────────────────────────────────
 
 class EventDispatcher {
@@ -110,6 +148,27 @@ public:
 
 private:
     std::unordered_map<std::type_index, std::vector<HandlerFn>> m_Handlers;
+};
+
+// ── 全局事件总线 ─────────────────────────────────────────────
+// 单例模式，方便跨模块发布/订阅
+
+class EventBus {
+public:
+    static EventDispatcher& Get() {
+        static EventDispatcher s_Instance;
+        return s_Instance;
+    }
+
+    template<typename T>
+    static void Subscribe(std::function<void(T&)> handler) {
+        Get().Subscribe<T>(handler);
+    }
+
+    template<typename T>
+    static void Dispatch(T& event) {
+        Get().Dispatch<T>(event);
+    }
 };
 
 } // namespace Engine

@@ -1,4 +1,5 @@
 #include "engine/physics/physics_world.h"
+#include "engine/core/event.h"
 #include "engine/core/log.h"
 
 #include <algorithm>
@@ -34,13 +35,16 @@ void PhysicsWorld::IntegrateForces(ECSWorld& world, f32 dt) {
             rb.Velocity += rb.GravityOverride * dt;
         }
 
-        // 加速度
+        // 加速度（含外部施加的力）
         rb.Velocity += rb.Acceleration * dt;
 
-        // 位移
+        // 半隐式 Euler: 先更新速度再更新位置（更稳定）
         tr->X += rb.Velocity.x * dt;
         tr->Y += rb.Velocity.y * dt;
         tr->Z += rb.Velocity.z * dt;
+
+        // 每帧清零加速度（力需要每帧重新施加）
+        rb.Acceleration = {0, 0, 0};
     });
 }
 
@@ -77,10 +81,15 @@ void PhysicsWorld::DetectCollisions(ECSWorld& world) {
                 pair.Penetration = penetration;
                 s_Pairs.push_back(pair);
 
-                // 触发回调
+                // 触发回调（旧接口兼容）
                 if (s_Callback) {
                     s_Callback(pair.EntityA, pair.EntityB, pair.Normal);
                 }
+
+                // 通过事件总线发布碰撞事件
+                CollisionEvent evt(pair.EntityA, pair.EntityB,
+                                   normal.x, normal.y, normal.z, penetration);
+                EventBus::Dispatch(evt);
             }
         }
     }
@@ -203,5 +212,19 @@ void PhysicsWorld::SetCollisionCallback(CollisionCallback cb) { s_Callback = cb;
 const std::vector<CollisionPair>& PhysicsWorld::GetCollisionPairs() { return s_Pairs; }
 void PhysicsWorld::SetGroundPlane(f32 height) { s_GroundHeight = height; }
 f32  PhysicsWorld::GetGroundPlane() { return s_GroundHeight; }
+
+// ── 力 / 冲量 ───────────────────────────────────────────────
+
+void PhysicsWorld::AddForce(ECSWorld& world, Entity e, const glm::vec3& force) {
+    auto* rb = world.GetComponent<RigidBodyComponent>(e);
+    if (!rb || rb->IsStatic || rb->Mass <= 0) return;
+    rb->Acceleration += force / rb->Mass;  // F = ma → a += F/m
+}
+
+void PhysicsWorld::AddImpulse(ECSWorld& world, Entity e, const glm::vec3& impulse) {
+    auto* rb = world.GetComponent<RigidBodyComponent>(e);
+    if (!rb || rb->IsStatic || rb->Mass <= 0) return;
+    rb->Velocity += impulse / rb->Mass;  // Δv = J/m
+}
 
 } // namespace Engine
