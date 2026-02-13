@@ -198,6 +198,9 @@ int main() {
 
     LOG_INFO("按键: WASD 移动 | F1 线框 | F3/F4 曝光 | F5 调试线 | F6 调试UI | F7 分析器 | F8 Bloom | F9 保存场景 | F10 加载场景 | Esc 退出");
 
+    // 用于检测窗口大小变化
+    Engine::u32 lastW = window.GetWidth(), lastH = window.GetHeight();
+
     // ═══════════════════════════════════════════════════════
     //  主循环：只有 输入 + 逻辑 + SceneRenderer::RenderScene
     // ═══════════════════════════════════════════════════════
@@ -208,6 +211,21 @@ int main() {
         Engine::Renderer::ResetStats();
         float dt = Engine::Time::DeltaTime();
         float t  = Engine::Time::Elapsed();
+
+        // ── 窗口 Resize 检测 ─────────────────────────────────
+        {
+            Engine::u32 curW = window.GetWidth(), curH = window.GetHeight();
+            if (curW != lastW || curH != lastH) {
+                if (curW > 0 && curH > 0) {
+                    Engine::SceneRenderer::Resize(curW, curH);
+                    camera.SetProjection(camera.GetFOV(), (float)curW / (float)curH,
+                                         camera.GetNearClip(), camera.GetFarClip());
+                    LOG_INFO("[窗口] 尺寸变更: %ux%u → %ux%u", lastW, lastH, curW, curH);
+                }
+                lastW = curW;
+                lastH = curH;
+            }
+        }
 
         // ── 输入处理 ────────────────────────────────────────
         if (Engine::Input::IsKeyJustPressed(Engine::Key::Escape)) {
@@ -269,20 +287,8 @@ int main() {
             }
         }
 
-        // 窗口标题 FPS
-        fpsTimer += dt;
-        if (fpsTimer >= 0.5f) {
-            fpsTimer = 0;
-            auto stats = Engine::Renderer::GetStats();
-            char title[128];
-            snprintf(title, sizeof(title),
-                "Engine v2.1 | FPS: %.0f | Draw: %u | Tri: %u | Part: %u | Exp: %.1f%s",
-                Engine::Time::FPS(), stats.DrawCalls, stats.TriangleCount,
-                Engine::ParticleSystem::GetAliveCount(),
-                Engine::SceneRenderer::GetExposure(),
-                Engine::SceneRenderer::GetBloomEnabled() ? " | Bloom:ON" : "");
-            window.SetTitle(title);
-        }
+
+
 
         // ── 摄像机（全部由控制器处理）───────────────────────
         camCtrl.Update(dt);
@@ -417,7 +423,20 @@ int main() {
             Engine::DebugUI::Flush(window.GetWidth(), window.GetHeight());
         }
 
-        Engine::Profiler::EndTimer("Frame");
+        // ── 窗口标题 FPS / 渲染统计 (在渲染之后更新) ─────────
+        fpsTimer += dt;
+        if (fpsTimer >= 0.5f) {
+            fpsTimer = 0;
+            auto stats = Engine::Renderer::GetStats();
+            char title[128];
+            snprintf(title, sizeof(title),
+                "Engine v2.1 | FPS: %.0f | Draw: %u | Tri: %u | Part: %u | Exp: %.1f%s",
+                Engine::Time::FPS(), stats.DrawCalls, stats.TriangleCount,
+                Engine::ParticleSystem::GetAliveCount(),
+                Engine::SceneRenderer::GetExposure(),
+                Engine::SceneRenderer::GetBloomEnabled() ? " | Bloom:ON" : "");
+            window.SetTitle(title);
+        }
         Engine::Profiler::EndFrame();
 
         window.Update();

@@ -219,6 +219,9 @@ u32 Bloom::Process(u32 hdrInputTexture) {
     glEnable(GL_DEPTH_TEST);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+    // ★ 恢复视口为全分辨率（Bloom 在半分辨率工作，不恢复会导致后处理只画到 1/4 区域）
+    glViewport(0, 0, s_Width, s_Height);
+
     // 返回最后写入的纹理
     return inputTex;
 }

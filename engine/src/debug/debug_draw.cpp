@@ -176,11 +176,11 @@ void DebugDraw::Flush(const f32* viewProjectionMatrix) {
     s_Shader->Bind();
     s_Shader->SetMat4("uVP", viewProjectionMatrix);
 
-    glLineWidth(s_LineWidth);
+    // 注意：OpenGL 4.5 Core Profile 中 glLineWidth > 1.0 已废弃
+    // 会产生 API_ID_LINE_WIDTH 警告，此处不再调用
     glBindVertexArray(s_VAO);
     glDrawArrays(GL_LINES, 0, (GLsizei)vertCount);
     glBindVertexArray(0);
-    glLineWidth(1.0f);
 
     s_Vertices.clear();
 }
