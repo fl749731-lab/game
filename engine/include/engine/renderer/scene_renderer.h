@@ -26,6 +26,15 @@ struct SceneRendererConfig {
     bool BloomEnabled = true;
 };
 
+/// 帧统计信息
+struct SceneFrameStats {
+    u32 EntityCount   = 0;
+    u32 BatchedCount  = 0;
+    u32 DrawCalls     = 0;
+    u32 TriangleCount = 0;
+    f32 FrameTimeMs   = 0.0f;
+};
+
 class SceneRenderer {
 public:
     static void Init(const SceneRendererConfig& config);
@@ -50,6 +59,9 @@ public:
 
     /// 获取 HDR FBO 的颜色纹理 ID
     static u32 GetHDRColorAttachment();
+
+    /// 获取帧统计信息
+    static const SceneFrameStats& GetFrameStats();
 
 private:
     // 各 Pass 函数
@@ -79,6 +91,7 @@ private:
     static f32 s_Exposure;
     static bool s_BloomEnabled;
     static int  s_GBufDebugMode;
+    static SceneFrameStats s_FrameStats;
 };
 
 } // namespace Engine

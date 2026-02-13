@@ -149,6 +149,10 @@ void SSAO::Init(u32 width, u32 height) {
 
     glBindFramebuffer(GL_FRAMEBUFFER, s_SSAO_FBO);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_SSAO_Texture, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        LOG_ERROR("[SSAO] SSAO FBO 不完整，SSAO 已禁用");
+        s_Enabled = false;
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     // 模糊 FBO
@@ -162,6 +166,10 @@ void SSAO::Init(u32 width, u32 height) {
 
     glBindFramebuffer(GL_FRAMEBUFFER, s_Blur_FBO);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_Blur_Texture, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        LOG_ERROR("[SSAO] Blur FBO 不完整，SSAO 已禁用");
+        s_Enabled = false;
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     // 着色器

@@ -145,6 +145,16 @@ void SSR::Init(u32 width, u32 height) {
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                            GL_TEXTURE_2D, s_ReflectionTex, 0);
 
+    // 验证 FBO 完整性
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        LOG_ERROR("[SSR] FBO 不完整，SSR 已禁用");
+        glDeleteFramebuffers(1, &s_FBO); s_FBO = 0;
+        glDeleteTextures(1, &s_ReflectionTex); s_ReflectionTex = 0;
+        s_Enabled = false;
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        return;
+    }
+
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     // 编译 Shader

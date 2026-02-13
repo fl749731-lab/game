@@ -1,4 +1,5 @@
 #include "engine/renderer/skybox.h"
+#include "engine/renderer/renderer.h"
 #include "engine/core/log.h"
 
 #include <glad/glad.h>
@@ -104,6 +105,8 @@ void Skybox::Draw(const f32* viewProjectionMatrix) {
     glBindVertexArray(s_CubeVAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
     glBindVertexArray(0);
+
+    Renderer::NotifyDraw(12);  // 36 顶点 = 12 个三角形
 
     glEnable(GL_CULL_FACE);
     glDepthFunc(GL_LESS);

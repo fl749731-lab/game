@@ -42,6 +42,19 @@ void BatchRenderer::Shutdown() {
 
 void BatchRenderer::Begin(Shader* shader) {
     s_CurrentShader = shader;
+
+    // 定期清理空批次（避免残留的 BatchGroup 占内存）
+    static u32 s_FrameCounter = 0;
+    if ((++s_FrameCounter % 120) == 0) {
+        for (auto it = s_Batches.begin(); it != s_Batches.end(); ) {
+            if (it->second.Instances.empty()) {
+                it = s_Batches.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
     for (auto& [key, group] : s_Batches) {
         group.Instances.clear();
     }

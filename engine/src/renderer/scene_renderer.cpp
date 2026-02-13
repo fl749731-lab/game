@@ -60,6 +60,7 @@ u32  SceneRenderer::s_Height = 0;
 f32  SceneRenderer::s_Exposure = 1.2f;
 bool SceneRenderer::s_BloomEnabled = true;
 int  SceneRenderer::s_GBufDebugMode = 0;
+SceneFrameStats SceneRenderer::s_FrameStats = {};
 
 // ── 初始化 ──────────────────────────────────────────────────
 
@@ -194,6 +195,7 @@ void SceneRenderer::Resize(u32 width, u32 height) {
 
 void SceneRenderer::RenderScene(Scene& scene, PerspectiveCamera& camera) {
     Profiler::BeginTimer("Render");
+    s_FrameStats = {};  // 重置帧统计
 
     ShadowPass(scene, camera);
     GeometryPass(scene, camera);
@@ -253,6 +255,13 @@ void SceneRenderer::RenderScene(Scene& scene, PerspectiveCamera& camera) {
     Profiler::EndTimer("Render");
 
     PostProcessPass();
+
+    // 收集帧统计
+    auto rStats = Renderer::GetStats();
+    s_FrameStats.DrawCalls     += rStats.DrawCalls;
+    s_FrameStats.TriangleCount += rStats.TriangleCount;
+    s_FrameStats.DrawCalls     += BatchRenderer::GetDrawCallCount();
+    s_FrameStats.BatchedCount   = BatchRenderer::GetInstanceCount();
 }
 
 // ── Pass 0: 阴影深度 ───────────────────────────────────────
@@ -659,6 +668,10 @@ int SceneRenderer::GetGBufferDebugMode() { return s_GBufDebugMode; }
 
 u32 SceneRenderer::GetHDRColorAttachment() {
     return s_HDR_FBO ? s_HDR_FBO->GetColorAttachmentID() : 0;
+}
+
+const SceneFrameStats& SceneRenderer::GetFrameStats() {
+    return s_FrameStats;
 }
 
 } // namespace Engine
