@@ -182,8 +182,71 @@ void AudioEngine::SetMasterVolume(f32 volume) {
     }
 }
 
+// ── 3D 空间音频 ──────────────────────────────────────────────
+
+void AudioEngine::PlaySFX3D(const std::string& filepath, const glm::vec3& position, f32 volume) {
+    if (!s_Initialized) return;
+
+    // 定期清理
+    if ((++s_SFXPlayCount & 0xF) == 0) {
+        std::lock_guard<std::mutex> lock(s_SFXMutex);
+        s_ActiveSFX.erase(
+            std::remove_if(s_ActiveSFX.begin(), s_ActiveSFX.end(),
+                [](SFXEntry& e) {
+                    if (e.Sound && ma_sound_at_end(e.Sound)) {
+                        ma_sound_uninit(e.Sound);
+                        delete e.Sound;
+                        return true;
+                    }
+                    return false;
+                }),
+            s_ActiveSFX.end());
+    }
+
+    auto* sound = new ma_sound();
+    if (ma_sound_init_from_file(s_Engine, filepath.c_str(),
+                                MA_SOUND_FLAG_DECODE, nullptr, nullptr,
+                                sound) != MA_SUCCESS) {
+        LOG_WARN("[AudioEngine] 3D音效加载失败: %s", filepath.c_str());
+        delete sound;
+        return;
+    }
+
+    // 启用空间化并设置位置
+    ma_sound_set_spatialization_enabled(sound, MA_TRUE);
+    ma_sound_set_position(sound, position.x, position.y, position.z);
+    ma_sound_set_volume(sound, volume * s_MasterVolume);
+    ma_sound_start(sound);
+
+    {
+        std::lock_guard<std::mutex> lock(s_SFXMutex);
+        s_ActiveSFX.push_back({sound});
+    }
+}
+
+void AudioEngine::SetListenerPosition(const glm::vec3& position,
+                                       const glm::vec3& forward,
+                                       const glm::vec3& up) {
+    if (!s_Initialized || !s_Engine) return;
+
+    ma_engine_listener_set_position(s_Engine, 0, position.x, position.y, position.z);
+    ma_engine_listener_set_direction(s_Engine, 0, forward.x, forward.y, forward.z);
+    ma_engine_listener_set_world_up(s_Engine, 0, up.x, up.y, up.z);
+}
+
+// ── 状态查询 ────────────────────────────────────────────────
+
 bool AudioEngine::IsInitialized() {
     return s_Initialized;
+}
+
+u32 AudioEngine::GetActiveSFXCount() {
+    std::lock_guard<std::mutex> lock(s_SFXMutex);
+    return (u32)s_ActiveSFX.size();
+}
+
+const std::string& AudioEngine::GetCurrentMusicPath() {
+    return s_CurrentMusic;
 }
 
 } // namespace Engine

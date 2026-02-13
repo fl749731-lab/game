@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/types.h"
+#include <glm/glm.hpp>
 #include <string>
 
 namespace Engine {
@@ -34,11 +35,23 @@ public:
     /// 播放一次性音效 (fire-and-forget)
     static void PlaySFX(const std::string& filepath, f32 volume = 1.0f);
 
+    /// 播放 3D 空间音效 (位置感知)
+    static void PlaySFX3D(const std::string& filepath, const glm::vec3& position, f32 volume = 1.0f);
+
+    /// 更新 3D 监听器位置和朝向 (每帧调用)
+    static void SetListenerPosition(const glm::vec3& position, const glm::vec3& forward, const glm::vec3& up);
+
     /// 设置全局主音量 [0.0 ~ 1.0]
     static void SetMasterVolume(f32 volume);
 
     /// 是否已初始化
     static bool IsInitialized();
+
+    /// 当前活跃音效数
+    static u32 GetActiveSFXCount();
+
+    /// 当前播放的音乐路径
+    static const std::string& GetCurrentMusicPath();
 };
 
 } // namespace Engine
