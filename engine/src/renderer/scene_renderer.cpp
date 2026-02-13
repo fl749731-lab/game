@@ -8,6 +8,8 @@
 #include "engine/renderer/texture.h"
 #include "engine/renderer/shadow_map.h"
 #include "engine/renderer/frustum.h"
+#include "engine/renderer/g_buffer.h"
+#include "engine/renderer/screen_quad.h"
 #include "engine/core/resource_manager.h"
 #include "engine/core/log.h"
 #include "engine/core/time.h"
@@ -23,14 +25,13 @@
 #include <vector>
 #include <array>
 
-// ── 预缓存点光 Uniform 名称（避免每帧 string 分配）───────
+// ── 预缓存 Uniform 名称 ─────────────────────────────────────
 struct PLUniformNames {
     std::string Pos, Color, Intensity;
     std::string Constant, Linear, Quadratic;
 };
 static std::array<PLUniformNames, Engine::MAX_POINT_LIGHTS> s_PLUniforms;
 
-// ── 预缓存聚光灯 Uniform 名称 ─────────────────────
 struct SLUniformNames {
     std::string Pos, Dir, Color, Intensity;
     std::string InnerCut, OuterCut;
@@ -43,13 +44,17 @@ namespace Engine {
 // ── 静态成员定义 ────────────────────────────────────────────
 
 Scope<Framebuffer> SceneRenderer::s_HDR_FBO = nullptr;
-Ref<Shader>   SceneRenderer::s_LitShader = nullptr;
-Ref<Shader>   SceneRenderer::s_EmissiveShader = nullptr;
+Ref<Shader> SceneRenderer::s_GBufferShader  = nullptr;
+Ref<Shader> SceneRenderer::s_DeferredShader = nullptr;
+Ref<Shader> SceneRenderer::s_EmissiveShader = nullptr;
+Ref<Shader> SceneRenderer::s_GBufDebugShader = nullptr;
+Ref<Shader> SceneRenderer::s_LitShader     = nullptr;
 u32  SceneRenderer::s_CheckerTexID = 0;
 u32  SceneRenderer::s_Width = 0;
 u32  SceneRenderer::s_Height = 0;
 f32  SceneRenderer::s_Exposure = 1.2f;
 bool SceneRenderer::s_BloomEnabled = true;
+int  SceneRenderer::s_GBufDebugMode = 0;
 
 // ── 初始化 ──────────────────────────────────────────────────
 
@@ -59,20 +64,29 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
     s_Exposure = config.Exposure;
     s_BloomEnabled = config.BloomEnabled;
 
-    // HDR FBO
+    // HDR FBO (用于光照 Pass 输出)
     FramebufferSpec fboSpec;
     fboSpec.Width  = config.Width;
     fboSpec.Height = config.Height;
     fboSpec.HDR = true;
     s_HDR_FBO = std::make_unique<Framebuffer>(fboSpec);
 
-    // 内置 Shader
-    s_LitShader = ResourceManager::LoadShader("lit",
-        Shaders::LitVertex, Shaders::LitFragment);
+    // G-Buffer (MRT)
+    GBuffer::Init(config.Width, config.Height);
+
+    // Shader
+    s_GBufferShader = ResourceManager::LoadShader("gbuffer",
+        Shaders::GBufferVertex, Shaders::GBufferFragment);
+    s_DeferredShader = ResourceManager::LoadShader("deferred_light",
+        Shaders::DeferredLightVertex, Shaders::DeferredLightFragment);
+    s_GBufDebugShader = ResourceManager::LoadShader("gbuf_debug",
+        Shaders::GBufferDebugVertex, Shaders::GBufferDebugFragment);
     s_EmissiveShader = ResourceManager::LoadShader("emissive",
         Shaders::EmissiveVertex, Shaders::EmissiveFragment);
+    s_LitShader = ResourceManager::LoadShader("lit",
+        Shaders::LitVertex, Shaders::LitFragment);
 
-    // 基础网格（如果还没创建）
+    // 基础网格
     if (!ResourceManager::GetMesh("cube"))
         ResourceManager::StoreMesh("cube", Mesh::CreateCube());
     if (!ResourceManager::GetMesh("plane"))
@@ -100,7 +114,7 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glGenerateMipmap(GL_TEXTURE_2D);
 
-    // 预缓存点光 Uniform 名称
+    // Uniform 名称缓存
     for (int i = 0; i < MAX_POINT_LIGHTS; i++) {
         std::string idx = std::to_string(i);
         s_PLUniforms[i].Pos       = "uPLPos[" + idx + "]";
@@ -110,8 +124,6 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
         s_PLUniforms[i].Linear    = "uPLLinear[" + idx + "]";
         s_PLUniforms[i].Quadratic = "uPLQuadratic[" + idx + "]";
     }
-
-    // 预缓存聚光灯 Uniform 名称
     for (int i = 0; i < MAX_SPOT_LIGHTS; i++) {
         std::string idx = std::to_string(i);
         s_SLUniforms[i].Pos       = "uSLPos[" + idx + "]";
@@ -125,22 +137,24 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
         s_SLUniforms[i].Quadratic = "uSLQuadratic[" + idx + "]";
     }
 
-    // 后处理 + Bloom
+    // 后处理 + Bloom + 阴影
     PostProcess::Init();
     PostProcess::SetExposure(s_Exposure);
     Bloom::Init(config.Width, config.Height);
-
-    // 阴影
     ShadowMap::Init();
 
-    LOG_INFO("[SceneRenderer] 初始化完成 (%ux%u)", s_Width, s_Height);
+    LOG_INFO("[SceneRenderer] 初始化完成 (%ux%u) — 延迟渲染管线", s_Width, s_Height);
 }
 
 void SceneRenderer::Shutdown() {
     if (s_CheckerTexID) { glDeleteTextures(1, &s_CheckerTexID); s_CheckerTexID = 0; }
     s_HDR_FBO.reset();
-    s_LitShader.reset();
+    GBuffer::Shutdown();
+    s_GBufferShader.reset();
+    s_DeferredShader.reset();
     s_EmissiveShader.reset();
+    s_GBufDebugShader.reset();
+    s_LitShader.reset();
     Bloom::Shutdown();
     ShadowMap::Shutdown();
     PostProcess::Shutdown();
@@ -151,6 +165,7 @@ void SceneRenderer::Resize(u32 width, u32 height) {
     s_Width  = width;
     s_Height = height;
     if (s_HDR_FBO) s_HDR_FBO->Resize(width, height);
+    GBuffer::Resize(width, height);
     Bloom::Resize(width, height);
 }
 
@@ -159,60 +174,162 @@ void SceneRenderer::Resize(u32 width, u32 height) {
 void SceneRenderer::RenderScene(Scene& scene, PerspectiveCamera& camera) {
     Profiler::BeginTimer("Render");
 
-    // ── Pass 0: 阴影深度 ──────────────────────────────────
-    {
-        auto& dirLight = scene.GetDirLight();
-        ShadowMap::BeginShadowPass(dirLight);
-        auto depthShader = ShadowMap::GetDepthShader();
-        auto& world = scene.GetWorld();
+    ShadowPass(scene, camera);
+    GeometryPass(scene, camera);
 
-        for (auto e : world.GetEntities()) {
-            auto* tr = world.GetComponent<TransformComponent>(e);
-            auto* rc = world.GetComponent<RenderComponent>(e);
-            if (!tr || !rc) continue;
+    // 调试模式: 直接显示 G-Buffer
+    if (s_GBufDebugMode > 0) {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        Renderer::SetViewport(0, 0, s_Width, s_Height);
+        Renderer::Clear();
 
-            glm::mat4 model = glm::translate(glm::mat4(1.0f), {tr->X, tr->Y, tr->Z});
-            model = glm::rotate(model, glm::radians(tr->RotY), {0, 1, 0});
-            model = glm::rotate(model, glm::radians(tr->RotX), {1, 0, 0});
-            model = glm::rotate(model, glm::radians(tr->RotZ), {0, 0, 1});
-            model = glm::scale(model, {tr->ScaleX, tr->ScaleY, tr->ScaleZ});
+        s_GBufDebugShader->Bind();
+        GBuffer::BindTextures(0);
+        s_GBufDebugShader->SetInt("gPosition", 0);
+        s_GBufDebugShader->SetInt("gNormal", 1);
+        s_GBufDebugShader->SetInt("gAlbedoSpec", 2);
+        s_GBufDebugShader->SetInt("gEmissive", 3);
+        s_GBufDebugShader->SetInt("uDebugMode", s_GBufDebugMode - 1);
+        ScreenQuad::Draw();
 
-            depthShader->SetMat4("uModel", glm::value_ptr(model));
-            auto* mesh = ResourceManager::GetMesh(rc->MeshType);
-            if (mesh) mesh->Draw();
-        }
-        ShadowMap::EndShadowPass();
+        Profiler::EndTimer("Render");
+        return;
     }
 
-    // ── Pass 1: 离屏 HDR FBO ────────────────────────────────
-    s_HDR_FBO->Bind();
-    Renderer::SetViewport(0, 0, s_Width, s_Height);  // 恢复 viewport（Shadow Pass 改了）
+    LightingPass(scene, camera);
+    ForwardPass(scene, camera);
+
+    Profiler::EndTimer("Render");
+
+    PostProcessPass();
+}
+
+// ── Pass 0: 阴影深度 ───────────────────────────────────────
+
+void SceneRenderer::ShadowPass(Scene& scene, PerspectiveCamera& camera) {
+    auto& dirLight = scene.GetDirLight();
+    ShadowMap::BeginShadowPass(dirLight);
+    auto depthShader = ShadowMap::GetDepthShader();
+    auto& world = scene.GetWorld();
+
+    for (auto e : world.GetEntities()) {
+        auto* tr = world.GetComponent<TransformComponent>(e);
+        auto* rc = world.GetComponent<RenderComponent>(e);
+        if (!tr || !rc) continue;
+
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), {tr->X, tr->Y, tr->Z});
+        model = glm::rotate(model, glm::radians(tr->RotY), {0, 1, 0});
+        model = glm::rotate(model, glm::radians(tr->RotX), {1, 0, 0});
+        model = glm::rotate(model, glm::radians(tr->RotZ), {0, 0, 1});
+        model = glm::scale(model, {tr->ScaleX, tr->ScaleY, tr->ScaleZ});
+
+        depthShader->SetMat4("uModel", glm::value_ptr(model));
+        auto* mesh = ResourceManager::GetMesh(rc->MeshType);
+        if (mesh) mesh->Draw();
+    }
+    ShadowMap::EndShadowPass();
+}
+
+// ── Pass 1: G-Buffer 几何 ──────────────────────────────────
+
+void SceneRenderer::GeometryPass(Scene& scene, PerspectiveCamera& camera) {
+    GBuffer::Bind();
     Renderer::SetClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     Renderer::Clear();
 
-    // 天空盒
+    RenderEntitiesDeferred(scene, camera);
+
+    GBuffer::Unbind();
+}
+
+// ── Pass 2: 延迟光照 ───────────────────────────────────────
+
+void SceneRenderer::LightingPass(Scene& scene, PerspectiveCamera& camera) {
+    s_HDR_FBO->Bind();
+    Renderer::SetClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    Renderer::Clear();
+
+    s_DeferredShader->Bind();
+
+    // 绑定 G-Buffer 纹理到纹理单元 0~3
+    GBuffer::BindTextures(0);
+    s_DeferredShader->SetInt("gPosition", 0);
+    s_DeferredShader->SetInt("gNormal", 1);
+    s_DeferredShader->SetInt("gAlbedoSpec", 2);
+    s_DeferredShader->SetInt("gEmissive", 3);
+
+    // 设置光照 Uniform
+    SetupLightUniforms(scene, s_DeferredShader.get(), camera);
+
+    // 绘制全屏四边形
+    ScreenQuad::Draw();
+
+    // 不要 Unbind HDR FBO — 前向 Pass 会继续写入
+}
+
+// ── Pass 3: 前向叠加 (天空盒/透明物/自发光/粒子/调试) ────
+
+void SceneRenderer::ForwardPass(Scene& scene, PerspectiveCamera& camera) {
+    // 直接在 HDR FBO 上继续绘制（光照 Pass 已经绑定了 HDR FBO）
+    // 前向叠加 Pass 不需要深度测试（天空盒在最远处，粒子/调试线也不需要严格深度遮挡）
+    Renderer::SetViewport(0, 0, s_Width, s_Height);
+
+
+    // 天空盒 (深度测试读取但不写入)
+    glDepthFunc(GL_LEQUAL);
+    glDepthMask(GL_FALSE);
     glm::mat4 skyVP = camera.GetProjectionMatrix() *
         glm::mat4(glm::mat3(camera.GetViewMatrix()));
     Skybox::Draw(glm::value_ptr(skyVP));
+    glDepthMask(GL_TRUE);
+    glDepthFunc(GL_LESS);
 
-    // 场景实体
-    RenderEntities(scene, camera);
+    // 光源可视化 (前向自发光 Shader)
+    {
+        auto& pls = scene.GetPointLights();
+        auto& sls = scene.GetSpotLights();
+        s_EmissiveShader->Bind();
+        s_EmissiveShader->SetMat4("uVP", glm::value_ptr(camera.GetViewProjectionMatrix()));
+        auto* cubeMesh = ResourceManager::GetMesh("cube");
 
-    // 光源可视化
-    RenderLightGizmos(scene, camera);
+        if (cubeMesh) {
+            for (auto& pl : pls) {
+                glm::mat4 m = glm::translate(glm::mat4(1.0f), pl.Position);
+                m = glm::scale(m, glm::vec3(0.12f));
+                s_EmissiveShader->SetMat4("uModel", glm::value_ptr(m));
+                s_EmissiveShader->SetVec3("uColor",
+                    pl.Color.x * pl.Intensity,
+                    pl.Color.y * pl.Intensity,
+                    pl.Color.z * pl.Intensity);
+                cubeMesh->Draw();
+            }
+            for (auto& sl : sls) {
+                glm::mat4 m = glm::translate(glm::mat4(1.0f), sl.Position);
+                m = glm::scale(m, glm::vec3(0.15f));
+                s_EmissiveShader->SetMat4("uModel", glm::value_ptr(m));
+                s_EmissiveShader->SetVec3("uColor",
+                    sl.Color.x * sl.Intensity,
+                    sl.Color.y * sl.Intensity,
+                    sl.Color.z * sl.Intensity);
+                cubeMesh->Draw();
+            }
+        }
+    }
 
     // 粒子
     ParticleSystem::Draw(
         glm::value_ptr(camera.GetViewProjectionMatrix()),
         camera.GetRight(), camera.GetUp());
 
-    // 调试线框 (3D 空间)
+    // 调试线框
     DebugDraw::Flush(glm::value_ptr(camera.GetViewProjectionMatrix()));
 
-    Profiler::EndTimer("Render");
-
-    // ── Pass 2: Bloom + 后处理 ──────────────────────────────
     s_HDR_FBO->Unbind();
+}
+
+// ── Pass 4: 后处理 ──────────────────────────────────────────
+
+void SceneRenderer::PostProcessPass() {
     Renderer::SetViewport(0, 0, s_Width, s_Height);
     Renderer::Clear();
 
@@ -225,69 +342,25 @@ void SceneRenderer::RenderScene(Scene& scene, PerspectiveCamera& camera) {
     }
 }
 
-// ── 实体渲染 ────────────────────────────────────────────────
+// ── 延迟几何实体渲染 ────────────────────────────────────────
 
-void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
+void SceneRenderer::RenderEntitiesDeferred(Scene& scene, PerspectiveCamera& camera) {
     auto& world = scene.GetWorld();
-    auto& pls = scene.GetPointLights();
-    auto& dirLight = scene.GetDirLight();
     float t = Time::Elapsed();
 
-    s_LitShader->Bind();
-    s_LitShader->SetMat4("uVP", glm::value_ptr(camera.GetViewProjectionMatrix()));
-    s_LitShader->SetVec3("uDirLightDir", dirLight.Direction.x, dirLight.Direction.y, dirLight.Direction.z);
-    s_LitShader->SetVec3("uDirLightColor", dirLight.Color.x * dirLight.Intensity,
-                          dirLight.Color.y * dirLight.Intensity, dirLight.Color.z * dirLight.Intensity);
-    glm::vec3 cp = camera.GetPosition();
-    s_LitShader->SetVec3("uViewPos", cp.x, cp.y, cp.z);
-    s_LitShader->SetFloat("uAmbientStrength", 0.15f);
-
-    // 阴影 Uniform
-    s_LitShader->SetMat4("uLightSpaceMat", glm::value_ptr(ShadowMap::GetLightSpaceMatrix()));
-    s_LitShader->SetInt("uShadowEnabled", 1);
-    s_LitShader->SetInt("uShadowMap", 5);  // 绽定到纹理单元 5
-    glActiveTexture(GL_TEXTURE0 + 5);
-    glBindTexture(GL_TEXTURE_2D, ShadowMap::GetShadowTextureID());
-
-    // 点光源 Uniform
-    int plCount = std::min((int)pls.size(), (int)MAX_POINT_LIGHTS);
-    s_LitShader->SetInt("uPLCount", plCount);
-    for (int i = 0; i < (int)pls.size() && i < MAX_POINT_LIGHTS; i++) {
-        s_LitShader->SetVec3(s_PLUniforms[i].Pos, pls[i].Position.x, pls[i].Position.y, pls[i].Position.z);
-        s_LitShader->SetVec3(s_PLUniforms[i].Color, pls[i].Color.x, pls[i].Color.y, pls[i].Color.z);
-        s_LitShader->SetFloat(s_PLUniforms[i].Intensity, pls[i].Intensity);
-        s_LitShader->SetFloat(s_PLUniforms[i].Constant, pls[i].Constant);
-        s_LitShader->SetFloat(s_PLUniforms[i].Linear, pls[i].Linear);
-        s_LitShader->SetFloat(s_PLUniforms[i].Quadratic, pls[i].Quadratic);
-    }
-
-    // 聚光灯 Uniform
-    auto& sls = scene.GetSpotLights();
-    int slCount = std::min((int)sls.size(), (int)MAX_SPOT_LIGHTS);
-    s_LitShader->SetInt("uSLCount", slCount);
-    for (int i = 0; i < (int)sls.size() && i < MAX_SPOT_LIGHTS; i++) {
-        s_LitShader->SetVec3(s_SLUniforms[i].Pos, sls[i].Position.x, sls[i].Position.y, sls[i].Position.z);
-        s_LitShader->SetVec3(s_SLUniforms[i].Dir, sls[i].Direction.x, sls[i].Direction.y, sls[i].Direction.z);
-        s_LitShader->SetVec3(s_SLUniforms[i].Color, sls[i].Color.x, sls[i].Color.y, sls[i].Color.z);
-        s_LitShader->SetFloat(s_SLUniforms[i].Intensity, sls[i].Intensity);
-        s_LitShader->SetFloat(s_SLUniforms[i].InnerCut, cosf(glm::radians(sls[i].InnerCutoff)));
-        s_LitShader->SetFloat(s_SLUniforms[i].OuterCut, cosf(glm::radians(sls[i].OuterCutoff)));
-        s_LitShader->SetFloat(s_SLUniforms[i].Constant, sls[i].Constant);
-        s_LitShader->SetFloat(s_SLUniforms[i].Linear, sls[i].Linear);
-        s_LitShader->SetFloat(s_SLUniforms[i].Quadratic, sls[i].Quadratic);
-    }
+    s_GBufferShader->Bind();
+    s_GBufferShader->SetMat4("uVP", glm::value_ptr(camera.GetViewProjectionMatrix()));
 
     // 视锥体剔除准备
     Frustum frustum;
     frustum.ExtractFromVP(camera.GetViewProjectionMatrix());
 
-    // 遍历实体
     for (auto e : world.GetEntities()) {
         auto* tr = world.GetComponent<TransformComponent>(e);
         auto* rc = world.GetComponent<RenderComponent>(e);
         if (!tr || !rc) continue;
 
-        // 视锥体剪裁 — 跳过不可见实体
+        // 视锥体剪裁
         {
             AABB worldAABB;
             worldAABB.Min = glm::vec3(tr->X - tr->ScaleX * 0.5f,
@@ -296,7 +369,6 @@ void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
             worldAABB.Max = glm::vec3(tr->X + tr->ScaleX * 0.5f,
                                       tr->Y + tr->ScaleY * 0.5f,
                                       tr->Z + tr->ScaleZ * 0.5f);
-            // plane 很大，不剪裁
             if (rc->MeshType != "plane" && !frustum.IsAABBVisible(worldAABB))
                 continue;
         }
@@ -308,7 +380,7 @@ void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
         model = glm::rotate(model, glm::radians(tr->RotZ), {0, 0, 1});
         model = glm::scale(model, {tr->ScaleX, tr->ScaleY, tr->ScaleZ});
 
-        // 旋转动画（如果 TagComponent 指定）
+        // 旋转动画
         auto* tag = world.GetComponent<TagComponent>(e);
         if (tag && tag->Name == "CenterCube") {
             model = glm::translate(glm::mat4(1.0f), {tr->X, tr->Y, tr->Z});
@@ -316,60 +388,55 @@ void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
             model = glm::rotate(model, t * 0.2f, {1, 0, 0});
         }
 
-        s_LitShader->SetMat4("uModel", glm::value_ptr(model));
-
-        // CPU 预计算法线矩阵（避免 GPU 每顶点 inverse）
+        s_GBufferShader->SetMat4("uModel", glm::value_ptr(model));
         glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(model)));
-        s_LitShader->SetMat3("uNormalMat", glm::value_ptr(normalMat));
+        s_GBufferShader->SetMat3("uNormalMat", glm::value_ptr(normalMat));
 
-        // 材质：优先使用 MaterialComponent，回退到 RenderComponent 旧字段
+        // 材质 (PBR)
         auto* mat = world.GetComponent<MaterialComponent>(e);
         if (mat) {
-            s_LitShader->SetVec3("uMatDiffuse", mat->DiffuseR, mat->DiffuseG, mat->DiffuseB);
-            s_LitShader->SetVec3("uMatSpecular", mat->SpecularR, mat->SpecularG, mat->SpecularB);
-            s_LitShader->SetFloat("uShininess", mat->Shininess);
+            s_GBufferShader->SetVec3("uAlbedo", mat->DiffuseR, mat->DiffuseG, mat->DiffuseB);
+            s_GBufferShader->SetFloat("uMetallic", mat->Metallic);
+            s_GBufferShader->SetFloat("uRoughness", mat->Roughness);
 
-            // 纹理
             if (!mat->TextureName.empty()) {
-                s_LitShader->SetInt("uUseTex", 1);
+                s_GBufferShader->SetInt("uUseTex", 1);
                 auto tex = ResourceManager::GetTexture(mat->TextureName);
-                if (tex) { tex->Bind(0); s_LitShader->SetInt("uTex", 0); }
+                if (tex) { tex->Bind(0); s_GBufferShader->SetInt("uTex", 0); }
             } else {
-                s_LitShader->SetInt("uUseTex", 0);
+                s_GBufferShader->SetInt("uUseTex", 0);
             }
 
-            // 法线贴图
             if (!mat->NormalMapName.empty()) {
-                s_LitShader->SetInt("uUseNormalMap", 1);
+                s_GBufferShader->SetInt("uUseNormalMap", 1);
                 auto nmap = ResourceManager::GetTexture(mat->NormalMapName);
-                if (nmap) { nmap->Bind(2); s_LitShader->SetInt("uNormalMap", 2); }
+                if (nmap) { nmap->Bind(2); s_GBufferShader->SetInt("uNormalMap", 2); }
             } else {
-                s_LitShader->SetInt("uUseNormalMap", 0);
+                s_GBufferShader->SetInt("uUseNormalMap", 0);
             }
 
-            // 自发光
             if (mat->Emissive) {
-                s_LitShader->SetInt("uIsEmissive", 1);
-                s_LitShader->SetVec3("uEmissiveColor", mat->EmissiveR, mat->EmissiveG, mat->EmissiveB);
-                s_LitShader->SetFloat("uEmissiveIntensity", mat->EmissiveIntensity);
+                s_GBufferShader->SetInt("uIsEmissive", 1);
+                s_GBufferShader->SetVec3("uEmissiveColor", mat->EmissiveR, mat->EmissiveG, mat->EmissiveB);
+                s_GBufferShader->SetFloat("uEmissiveIntensity", mat->EmissiveIntensity);
             } else {
-                s_LitShader->SetInt("uIsEmissive", 0);
+                s_GBufferShader->SetInt("uIsEmissive", 0);
             }
         } else {
-            // 旧兼容路径
-            s_LitShader->SetVec3("uMatDiffuse", rc->ColorR, rc->ColorG, rc->ColorB);
-            s_LitShader->SetVec3("uMatSpecular", 0.8f, 0.8f, 0.8f);
-            s_LitShader->SetFloat("uShininess", rc->Shininess);
-            s_LitShader->SetInt("uUseNormalMap", 0);
-            s_LitShader->SetInt("uIsEmissive", 0);
+            // 旧兼容路径 → 默认 PBR 参数
+            s_GBufferShader->SetVec3("uAlbedo", rc->ColorR, rc->ColorG, rc->ColorB);
+            s_GBufferShader->SetFloat("uMetallic", 0.0f);   // 非金属
+            s_GBufferShader->SetFloat("uRoughness", 0.5f);  // 中等粗糙
+            s_GBufferShader->SetInt("uUseNormalMap", 0);
+            s_GBufferShader->SetInt("uIsEmissive", 0);
 
             if (rc->MeshType == "plane") {
-                s_LitShader->SetInt("uUseTex", 1);
+                s_GBufferShader->SetInt("uUseTex", 1);
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, s_CheckerTexID);
-                s_LitShader->SetInt("uTex", 0);
+                s_GBufferShader->SetInt("uTex", 0);
             } else {
-                s_LitShader->SetInt("uUseTex", 0);
+                s_GBufferShader->SetInt("uUseTex", 0);
             }
         }
 
@@ -378,39 +445,54 @@ void SceneRenderer::RenderEntities(Scene& scene, PerspectiveCamera& camera) {
     }
 }
 
-// ── 光源可视化 ──────────────────────────────────────────────
+// ── 光照 Uniform 设置 ──────────────────────────────────────
 
-void SceneRenderer::RenderLightGizmos(Scene& scene, PerspectiveCamera& camera) {
+void SceneRenderer::SetupLightUniforms(Scene& scene, Shader* shader, PerspectiveCamera& camera) {
+    auto& dirLight = scene.GetDirLight();
     auto& pls = scene.GetPointLights();
-    if (pls.empty()) return;
+    auto& sls = scene.GetSpotLights();
+    glm::vec3 cp = camera.GetPosition();
 
-    s_EmissiveShader->Bind();
-    s_EmissiveShader->SetMat4("uVP", glm::value_ptr(camera.GetViewProjectionMatrix()));
-    auto* cubeMesh = ResourceManager::GetMesh("cube");
-    if (!cubeMesh) return;
+    shader->SetVec3("uDirLightDir", dirLight.Direction.x, dirLight.Direction.y, dirLight.Direction.z);
+    shader->SetVec3("uDirLightColor",
+        dirLight.Color.x * dirLight.Intensity,
+        dirLight.Color.y * dirLight.Intensity,
+        dirLight.Color.z * dirLight.Intensity);
+    shader->SetVec3("uViewPos", cp.x, cp.y, cp.z);
+    shader->SetFloat("uAmbientStrength", 0.15f);
 
-    for (auto& pl : pls) {
-        glm::mat4 m = glm::translate(glm::mat4(1.0f), pl.Position);
-        m = glm::scale(m, glm::vec3(0.12f));
-        s_EmissiveShader->SetMat4("uModel", glm::value_ptr(m));
-        s_EmissiveShader->SetVec3("uColor",
-            pl.Color.x * pl.Intensity,
-            pl.Color.y * pl.Intensity,
-            pl.Color.z * pl.Intensity);
-        cubeMesh->Draw();
+    // 阴影
+    shader->SetMat4("uLightSpaceMat", glm::value_ptr(ShadowMap::GetLightSpaceMatrix()));
+    shader->SetInt("uShadowEnabled", 1);
+    shader->SetInt("uShadowMap", 4);  // 纹理单元 4
+    glActiveTexture(GL_TEXTURE0 + 4);
+    glBindTexture(GL_TEXTURE_2D, ShadowMap::GetShadowTextureID());
+
+    // 点光源
+    int plCount = std::min((int)pls.size(), (int)MAX_POINT_LIGHTS);
+    shader->SetInt("uPLCount", plCount);
+    for (int i = 0; i < plCount; i++) {
+        shader->SetVec3(s_PLUniforms[i].Pos, pls[i].Position.x, pls[i].Position.y, pls[i].Position.z);
+        shader->SetVec3(s_PLUniforms[i].Color, pls[i].Color.x, pls[i].Color.y, pls[i].Color.z);
+        shader->SetFloat(s_PLUniforms[i].Intensity, pls[i].Intensity);
+        shader->SetFloat(s_PLUniforms[i].Constant, pls[i].Constant);
+        shader->SetFloat(s_PLUniforms[i].Linear, pls[i].Linear);
+        shader->SetFloat(s_PLUniforms[i].Quadratic, pls[i].Quadratic);
     }
 
-    // 聚光灯 Gizmo
-    auto& sls = scene.GetSpotLights();
-    for (auto& sl : sls) {
-        glm::mat4 m = glm::translate(glm::mat4(1.0f), sl.Position);
-        m = glm::scale(m, glm::vec3(0.15f));
-        s_EmissiveShader->SetMat4("uModel", glm::value_ptr(m));
-        s_EmissiveShader->SetVec3("uColor",
-            sl.Color.x * sl.Intensity,
-            sl.Color.y * sl.Intensity,
-            sl.Color.z * sl.Intensity);
-        cubeMesh->Draw();
+    // 聚光灯
+    int slCount = std::min((int)sls.size(), (int)MAX_SPOT_LIGHTS);
+    shader->SetInt("uSLCount", slCount);
+    for (int i = 0; i < slCount; i++) {
+        shader->SetVec3(s_SLUniforms[i].Pos, sls[i].Position.x, sls[i].Position.y, sls[i].Position.z);
+        shader->SetVec3(s_SLUniforms[i].Dir, sls[i].Direction.x, sls[i].Direction.y, sls[i].Direction.z);
+        shader->SetVec3(s_SLUniforms[i].Color, sls[i].Color.x, sls[i].Color.y, sls[i].Color.z);
+        shader->SetFloat(s_SLUniforms[i].Intensity, sls[i].Intensity);
+        shader->SetFloat(s_SLUniforms[i].InnerCut, cosf(glm::radians(sls[i].InnerCutoff)));
+        shader->SetFloat(s_SLUniforms[i].OuterCut, cosf(glm::radians(sls[i].OuterCutoff)));
+        shader->SetFloat(s_SLUniforms[i].Constant, sls[i].Constant);
+        shader->SetFloat(s_SLUniforms[i].Linear, sls[i].Linear);
+        shader->SetFloat(s_SLUniforms[i].Quadratic, sls[i].Quadratic);
     }
 }
 
@@ -433,6 +515,16 @@ bool SceneRenderer::GetBloomEnabled() { return s_BloomEnabled; }
 void SceneRenderer::SetWireframe(bool enabled) {
     Renderer::SetWireframe(enabled);
 }
+
+void SceneRenderer::SetGBufferDebugMode(int mode) {
+    s_GBufDebugMode = mode;
+    if (mode > 0)
+        LOG_INFO("[SceneRenderer] G-Buffer 调试模式: %d", mode);
+    else
+        LOG_INFO("[SceneRenderer] G-Buffer 调试关闭");
+}
+
+int SceneRenderer::GetGBufferDebugMode() { return s_GBufDebugMode; }
 
 u32 SceneRenderer::GetHDRColorAttachment() {
     return s_HDR_FBO ? s_HDR_FBO->GetColorAttachmentID() : 0;
