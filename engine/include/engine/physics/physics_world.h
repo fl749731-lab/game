@@ -52,6 +52,12 @@ public:
     /// 每帧更新物理（固定步长内调用）
     static void Step(ECSWorld& world, f32 dt);
 
+    /// 施加持续力（通过加速度累积，下帧生效，F = m*a）
+    static void AddForce(ECSWorld& world, Entity e, const glm::vec3& force);
+
+    /// 施加瞬间冲量（直接改变速度，用于爆炸/跳跃等）
+    static void AddImpulse(ECSWorld& world, Entity e, const glm::vec3& impulse);
+
     /// 射线检测（返回第一个命中的实体碰撞信息）
     static HitResult Raycast(ECSWorld& world, const Ray& ray,
                              Entity* outEntity = nullptr);
