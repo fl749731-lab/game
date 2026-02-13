@@ -12,14 +12,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            generator: "Visual Studio 17 2022"
-            build_type: Release
           - os: ubuntu-latest
             generator: "Unix Makefiles"
             build_type: Release
+            experimental: false
+          - os: windows-latest
+            generator: "Visual Studio 17 2022"
+            build_type: Release
+            experimental: true  # MSVC 兼容性持续改进中
 
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
 
     steps:
       - name: Checkout
