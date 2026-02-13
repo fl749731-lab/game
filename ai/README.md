@@ -6,7 +6,7 @@
 
 ## 架构
 
-```
+```text
 C++ Engine (AIManager)
     ↕  pybind11
 Python AI Scripts (ai/scripts/)
@@ -22,7 +22,7 @@ Python AI Scripts (ai/scripts/)
 ## 现有脚本
 
 | 脚本 | 文件 | 行为 |
-|------|------|------|
+| ------ | ------ | ------ |
 | 默认 AI | `default_ai.py` | 基础巡逻 + 追击逻辑 |
 | 攻击型 | `aggressive_ai.py` | 主动寻找并追击敌人 |
 | 防御型 | `defensive_ai.py` | 保持据点，受攻击才反击 |
