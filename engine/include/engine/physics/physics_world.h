@@ -15,6 +15,7 @@ namespace Engine {
 struct ColliderComponent : public Component {
     AABB LocalBounds = {};   // 局部空间 AABB
     bool IsTrigger = false;  // true = 只触发事件，不产生物理响应
+    bool UseCCD = false;     // true = 启用连续碰撞检测（高速物体防穿透）
 
     /// 获取世界空间 AABB（需要 TransformComponent）
     AABB GetWorldAABB(const TransformComponent& tr) const {
@@ -55,6 +56,47 @@ struct RigidBodyComponent : public Component {
 
 using CollisionCallback = std::function<void(Entity a, Entity b, const glm::vec3& normal)>;
 
+// ── 关节/约束类型 ────────────────────────────────────────────
+
+enum class ConstraintType : u8 {
+    Distance,     // 距离约束 — 两实体间保持固定距离
+    Spring,       // 弹簧约束 — 两实体间弹簧连接
+    Hinge,        // 铰链约束 — 绕一条轴旋转
+    PointToPoint, // 点对点约束 — 球关节（任意方向旋转）
+};
+
+struct Constraint {
+    ConstraintType Type = ConstraintType::Distance;
+    Entity EntityA = INVALID_ENTITY;
+    Entity EntityB = INVALID_ENTITY;
+
+    // 锚点（各自局部空间）
+    glm::vec3 AnchorA = {0, 0, 0};
+    glm::vec3 AnchorB = {0, 0, 0};
+
+    // Distance / Spring 参数
+    f32 Distance    = 1.0f;      // 目标距离
+    f32 Stiffness   = 100.0f;    // 弹簧刚度 (Spring)
+    f32 Damping     = 5.0f;      // 弹簧阻尼 (Spring)
+
+    // Hinge 参数
+    glm::vec3 HingeAxis = {0, 1, 0};  // 铰链轴（世界空间）
+    f32 MinAngle = -3.14159f;         // 角度限制（弧度）
+    f32 MaxAngle =  3.14159f;
+
+    bool Enabled = true;
+};
+
+// ── CCD 结果 ────────────────────────────────────────────────
+
+struct CCDResult {
+    bool Hit = false;
+    f32  TOI = 1.0f;          // Time of Impact [0,1]
+    glm::vec3 HitPoint = {};
+    glm::vec3 HitNormal = {};
+    Entity HitEntity = INVALID_ENTITY;
+};
+
 // ── 物理世界 ────────────────────────────────────────────────
 
 class PhysicsWorld {
@@ -85,15 +127,37 @@ public:
     static void SetGroundPlane(f32 height);
     static f32  GetGroundPlane();
 
+    // ── 关节/约束 API ───────────────────────────────────
+    /// 添加约束
+    static u32  AddConstraint(const Constraint& c);
+    /// 移除约束
+    static void RemoveConstraint(u32 id);
+    /// 获取约束（可修改）
+    static Constraint* GetConstraint(u32 id);
+    /// 清除所有约束
+    static void ClearConstraints();
+    /// 获取约束数量
+    static u32  GetConstraintCount();
+
+    // ── CCD API ─────────────────────────────────────────
+    /// 对单个实体进行连续碰撞检测
+    static CCDResult SweepTest(ECSWorld& world, Entity e, 
+                               const glm::vec3& displacement);
+
 private:
     static void IntegrateForces(ECSWorld& world, f32 dt);
     static void DetectCollisions(ECSWorld& world);
     static void ResolveCollisions(ECSWorld& world);
     static void ResolveGroundCollisions(ECSWorld& world);
+    static void SolveConstraints(ECSWorld& world, f32 dt);
+    static void PerformCCD(ECSWorld& world, f32 dt);
 
     static std::vector<CollisionPair> s_Pairs;
     static CollisionCallback s_Callback;
     static f32 s_GroundHeight;
+    static std::vector<Constraint> s_Constraints;
+    static u32 s_ConstraintIdCounter;
+    static constexpr i32 CONSTRAINT_ITERATIONS = 8; // 约束迭代次数
 };
 
 } // namespace Engine
