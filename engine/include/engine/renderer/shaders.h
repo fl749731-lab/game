@@ -425,10 +425,12 @@ void main() {
     // 从 G-Buffer 采样
     vec3  FragPos   = texture(gPosition,   vTexCoord).rgb;
     vec3  Normal    = texture(gNormal,     vTexCoord).rgb;
-    vec3  Albedo    = texture(gAlbedoSpec, vTexCoord).rgb;
-    float Metallic  = texture(gAlbedoSpec, vTexCoord).a;
-    vec3  Emissive  = texture(gEmissive,   vTexCoord).rgb;
-    float Roughness = texture(gEmissive,   vTexCoord).a;
+    vec4  albedoSample  = texture(gAlbedoSpec, vTexCoord);
+    vec4  emissiveSample = texture(gEmissive,  vTexCoord);
+    vec3  Albedo    = albedoSample.rgb;
+    float Metallic  = albedoSample.a;
+    vec3  Emissive  = emissiveSample.rgb;
+    float Roughness = emissiveSample.a;
 
     // 限制粗糙度最小值避免高光爆炸
     Roughness = max(Roughness, 0.04);
