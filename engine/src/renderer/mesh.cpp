@@ -101,6 +101,33 @@ Mesh::~Mesh() {
     if (m_IBO) glDeleteBuffers(1, &m_IBO);
 }
 
+Mesh::Mesh(Mesh&& other) noexcept
+    : m_VAO(other.m_VAO), m_VBO(other.m_VBO), m_IBO(other.m_IBO),
+      m_IndexCount(other.m_IndexCount),
+      m_Vertices(std::move(other.m_Vertices))
+{
+    other.m_VAO = other.m_VBO = other.m_IBO = 0;
+    other.m_IndexCount = 0;
+}
+
+Mesh& Mesh::operator=(Mesh&& other) noexcept {
+    if (this != &other) {
+        // 释放旧资源
+        if (m_VAO) glDeleteVertexArrays(1, &m_VAO);
+        if (m_VBO) glDeleteBuffers(1, &m_VBO);
+        if (m_IBO) glDeleteBuffers(1, &m_IBO);
+        // 转移
+        m_VAO = other.m_VAO;
+        m_VBO = other.m_VBO;
+        m_IBO = other.m_IBO;
+        m_IndexCount = other.m_IndexCount;
+        m_Vertices = std::move(other.m_Vertices);
+        other.m_VAO = other.m_VBO = other.m_IBO = 0;
+        other.m_IndexCount = 0;
+    }
+    return *this;
+}
+
 void Mesh::Draw() const {
     glBindVertexArray(m_VAO);
     glDrawElements(GL_TRIANGLES, m_IndexCount, GL_UNSIGNED_INT, nullptr);

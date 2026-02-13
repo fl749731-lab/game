@@ -39,6 +39,10 @@ public:
     Mesh(const Mesh&) = delete;
     Mesh& operator=(const Mesh&) = delete;
 
+    /// 移动语义 (允许容器使用)
+    Mesh(Mesh&& other) noexcept;
+    Mesh& operator=(Mesh&& other) noexcept;
+
     void Draw() const;
 
     u32 GetVertexCount() const { return (u32)m_Vertices.size(); }

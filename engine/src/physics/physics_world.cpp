@@ -67,29 +67,50 @@ void PhysicsWorld::DetectCollisions(ECSWorld& world) {
         entities.push_back({e, col.GetWorldAABB(*tr), col.IsTrigger});
     });
 
-    // O(n²) 暴力检测（小规模足够）
-    for (size_t i = 0; i < entities.size(); i++) {
-        for (size_t j = i + 1; j < entities.size(); j++) {
-            glm::vec3 normal;
-            f32 penetration;
-            if (Collision::TestAABB(entities[i].worldAABB, entities[j].worldAABB,
-                                    normal, penetration)) {
-                CollisionPair pair;
-                pair.EntityA = entities[i].e;
-                pair.EntityB = entities[j].e;
-                pair.Normal = normal;
-                pair.Penetration = penetration;
-                s_Pairs.push_back(pair);
+    // 小规模用暴力检测（<= 32 实体时 O(n²) 更快，避免哈希开销）
+    auto narrowPhase = [&](size_t i, size_t j) {
+        glm::vec3 normal;
+        f32 penetration;
+        if (Collision::TestAABB(entities[i].worldAABB, entities[j].worldAABB,
+                                normal, penetration)) {
+            CollisionPair pair;
+            pair.EntityA = entities[i].e;
+            pair.EntityB = entities[j].e;
+            pair.Normal = normal;
+            pair.Penetration = penetration;
+            s_Pairs.push_back(pair);
 
-                // 触发回调（旧接口兼容）
-                if (s_Callback) {
-                    s_Callback(pair.EntityA, pair.EntityB, pair.Normal);
-                }
+            if (s_Callback) {
+                s_Callback(pair.EntityA, pair.EntityB, pair.Normal);
+            }
 
-                // 通过事件总线发布碰撞事件
-                CollisionEvent evt(pair.EntityA, pair.EntityB,
-                                   normal.x, normal.y, normal.z, penetration);
-                EventBus::Dispatch(evt);
+            CollisionEvent evt(pair.EntityA, pair.EntityB,
+                               normal.x, normal.y, normal.z, penetration);
+            EventBus::Dispatch(evt);
+        }
+    };
+
+    if (entities.size() <= 32) {
+        // 暴力检测快速路径
+        for (size_t i = 0; i < entities.size(); i++) {
+            for (size_t j = i + 1; j < entities.size(); j++) {
+                narrowPhase(i, j);
+            }
+        }
+    } else {
+        // SpatialHash 宽相加速
+        SpatialHash grid(4.0f);
+        std::unordered_map<u32, size_t> entityIndex;
+        for (size_t i = 0; i < entities.size(); i++) {
+            grid.Insert(entities[i].e, entities[i].worldAABB);
+            entityIndex[entities[i].e] = i;
+        }
+        auto potentialPairs = grid.GetPotentialPairs();
+        for (auto& [a, b] : potentialPairs) {
+            auto itA = entityIndex.find(a);
+            auto itB = entityIndex.find(b);
+            if (itA != entityIndex.end() && itB != entityIndex.end()) {
+                narrowPhase(itA->second, itB->second);
             }
         }
     }
