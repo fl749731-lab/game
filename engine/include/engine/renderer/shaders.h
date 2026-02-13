@@ -463,8 +463,9 @@ void main() {
 
     // ── 点光源 PBR ──────────────────────────────
     for (int i = 0; i < uPLCount; i++) {
-        vec3 pL = normalize(uPLPos[i] - FragPos);
-        float d = length(uPLPos[i] - FragPos);
+        vec3 toLight = uPLPos[i] - FragPos;
+        float d = length(toLight);
+        vec3 pL = toLight / max(d, 0.0001);
         float att = 1.0 / (uPLConstant[i] + uPLLinear[i]*d + uPLQuadratic[i]*d*d);
         vec3 radiance = uPLColor[i] * uPLIntensity[i] * att;
         result += CalcPBRLight(pL, radiance, N, V, Albedo, Metallic, Roughness, F0);
@@ -472,8 +473,9 @@ void main() {
 
     // ── 聚光灯 PBR ──────────────────────────────
     for (int i = 0; i < uSLCount; i++) {
-        vec3 sL = normalize(uSLPos[i] - FragPos);
-        float d = length(uSLPos[i] - FragPos);
+        vec3 toLight = uSLPos[i] - FragPos;
+        float d = length(toLight);
+        vec3 sL = toLight / max(d, 0.0001);
         float theta = dot(sL, normalize(-uSLDir[i]));
         float epsilon = max(uSLInnerCut[i] - uSLOuterCut[i], 0.001);
         float spotAtt = clamp((theta - uSLOuterCut[i]) / epsilon, 0.0, 1.0);
