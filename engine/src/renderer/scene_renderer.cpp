@@ -51,6 +51,7 @@ Ref<Shader> SceneRenderer::s_DeferredShader = nullptr;
 Ref<Shader> SceneRenderer::s_EmissiveShader = nullptr;
 Ref<Shader> SceneRenderer::s_GBufDebugShader = nullptr;
 Ref<Shader> SceneRenderer::s_LitShader     = nullptr;
+Ref<Shader> SceneRenderer::s_BlitShader    = nullptr;
 u32  SceneRenderer::s_CheckerTexID = 0;
 u32  SceneRenderer::s_Width = 0;
 u32  SceneRenderer::s_Height = 0;
@@ -87,6 +88,8 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
         Shaders::EmissiveVertex, Shaders::EmissiveFragment);
     s_LitShader = ResourceManager::LoadShader("lit",
         Shaders::LitVertex, Shaders::LitFragment);
+    s_BlitShader = ResourceManager::LoadShader("blit",
+        Shaders::BlitTextureVertex, Shaders::BlitTextureFragment);
 
     // 基础网格
     if (!ResourceManager::GetMesh("cube"))
@@ -159,6 +162,7 @@ void SceneRenderer::Shutdown() {
     s_EmissiveShader.reset();
     s_GBufDebugShader.reset();
     s_LitShader.reset();
+    s_BlitShader.reset();
     Bloom::Shutdown();
     ShadowMap::Shutdown();
     SSAO::Shutdown();
@@ -222,18 +226,16 @@ void SceneRenderer::RenderScene(Scene& scene, PerspectiveCamera& camera) {
         s_HDR_FBO->Bind();
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);  // 不写深度
 
-        // 绘制 SSR 反射纹理到 HDR buffer
-        auto ssrBlitShader = ResourceManager::GetShader("gbuf_debug");
-        if (ssrBlitShader) {
-            ssrBlitShader->Bind();
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, SSR::GetReflectionTexture());
-            ssrBlitShader->SetInt("gPosition", 0);
-            ssrBlitShader->SetInt("uDebugMode", -1);
-            ScreenQuad::Draw();
-        }
+        // 使用专用 Blit Shader 绘制 SSR 反射纹理
+        s_BlitShader->Bind();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, SSR::GetReflectionTexture());
+        s_BlitShader->SetInt("uTexture", 0);
+        ScreenQuad::Draw();
 
+        glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
     }
 
@@ -314,7 +316,11 @@ void SceneRenderer::LightingPass(Scene& scene, PerspectiveCamera& camera) {
     // 绘制全屏四边形
     ScreenQuad::Draw();
 
-    // 不要 Unbind HDR FBO — 前向 Pass 会继续写入
+    // 将 G-Buffer 深度纹理附加到 HDR FBO (供前向 Pass 深度遮挡)
+    // 这避免了 glBlitFramebuffer (自定义 GLAD 未导出)
+    glBindFramebuffer(GL_FRAMEBUFFER, s_HDR_FBO->GetFBO());
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                           GL_TEXTURE_2D, GBuffer::GetDepthTexture(), 0);
 }
 
 // ── Pass 3: 前向叠加 (天空盒/透明物/自发光/粒子/调试) ────

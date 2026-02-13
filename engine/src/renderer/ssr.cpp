@@ -52,14 +52,6 @@ uniform float uStepSize;
 uniform float uThickness;
 uniform vec2  uScreenSize;
 
-// 将世界空间位置转换为屏幕 UV
-vec2 worldToUV(vec3 worldPos, out float depth) {
-    vec4 clipPos = uProjection * uView * vec4(worldPos, 1.0);
-    vec3 ndc = clipPos.xyz / clipPos.w;
-    depth = ndc.z;
-    return ndc.xy * 0.5 + 0.5;
-}
-
 void main() {
     vec3 FragPos  = texture(gPosition,  vTexCoord).rgb;
     vec3 Normal   = texture(gNormal,    vTexCoord).rgb;

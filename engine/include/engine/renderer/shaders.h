@@ -534,5 +534,30 @@ void main() {
 }
 )";
 
+// ── 全屏纹理 Blit Shader (用于 SSR 混合等) ─────────────────
+
+inline const char* BlitTextureVertex = R"(
+#version 450 core
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec2 aTexCoord;
+out vec2 vTexCoord;
+void main() {
+    vTexCoord = aTexCoord;
+    gl_Position = vec4(aPos, 1.0);
+}
+)";
+
+inline const char* BlitTextureFragment = R"(
+#version 450 core
+out vec4 FragColor;
+in vec2 vTexCoord;
+
+uniform sampler2D uTexture;
+
+void main() {
+    FragColor = texture(uTexture, vTexCoord);
+}
+)";
+
 }} // namespace Engine::Shaders
 
