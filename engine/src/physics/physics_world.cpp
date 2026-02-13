@@ -14,30 +14,38 @@ CollisionCallback PhysicsWorld::s_Callback = nullptr;
 CollisionEventCallback PhysicsWorld::s_EventCallback = nullptr;
 f32 PhysicsWorld::s_GroundHeight = 0.0f;
 std::vector<Constraint> PhysicsWorld::s_Constraints;
-u32 PhysicsWorld::s_ConstraintIdCounter = 0;
-f32 PhysicsWorld::s_FixedTimestep = 1.0f / 60.0f;
+std::vector<u32> PhysicsWorld::s_FreeSlots;
 f32 PhysicsWorld::s_Accumulator = 0.0f;
+PhysicsConfig PhysicsWorld::s_Config;
 std::unordered_set<PhysicsWorld::PairKey, PhysicsWorld::PairHash> PhysicsWorld::s_PreviousPairs;
 std::unordered_set<PhysicsWorld::PairKey, PhysicsWorld::PairHash> PhysicsWorld::s_CurrentPairs;
 std::vector<CollisionEventData> PhysicsWorld::s_CollisionEvents;
+std::mutex PhysicsWorld::s_Mutex;
+
+// ── 配置 ────────────────────────────────────────────────────
+
+void PhysicsWorld::SetConfig(const PhysicsConfig& cfg) {
+    std::lock_guard<std::mutex> lock(s_Mutex);
+    s_Config = cfg;
+}
+
+const PhysicsConfig& PhysicsWorld::GetConfig() { return s_Config; }
 
 // ── 固定步长累积器 ──────────────────────────────────────────
 
 void PhysicsWorld::Update(ECSWorld& world, f32 frameTime) {
-    // 防止帧时间过大导致死循环（断点调试等）
-    frameTime = std::min(frameTime, 0.25f);
+    std::lock_guard<std::mutex> lock(s_Mutex);
+
+    frameTime = std::min(frameTime, s_Config.MaxAccumulator);
     s_Accumulator += frameTime;
 
-    while (s_Accumulator >= s_FixedTimestep) {
-        Step(world, s_FixedTimestep);
-        s_Accumulator -= s_FixedTimestep;
+    while (s_Accumulator >= s_Config.FixedTimestep) {
+        Step(world, s_Config.FixedTimestep);
+        s_Accumulator -= s_Config.FixedTimestep;
     }
 }
 
-void PhysicsWorld::SetFixedTimestep(f32 dt) { s_FixedTimestep = std::max(dt, 1.0f/240.0f); }
-f32  PhysicsWorld::GetFixedTimestep() { return s_FixedTimestep; }
-
-// ── 主更新（单步）────────────────────────────────────────
+// ── 主更新 ──────────────────────────────────────────────────
 
 void PhysicsWorld::Step(ECSWorld& world, f32 dt) {
     UpdateSleep(world, dt);
@@ -45,10 +53,33 @@ void PhysicsWorld::Step(ECSWorld& world, f32 dt) {
     PerformCCD(world, dt);
     DetectCollisions(world);
     UpdateCollisionEvents();
-    ResolveCollisions(world);
+
+    // 多次速度迭代提高稳定性
+    for (i32 v = 0; v < s_Config.VelocityIters; v++) {
+        ResolveCollisions(world);
+    }
+
     SolveConstraints(world, dt);
     ResolveGroundCollisions(world);
     UpdateCharacterControllers(world, dt);
+}
+
+// ── 速度钳制 ────────────────────────────────────────────────
+
+void PhysicsWorld::ClampVelocities(RigidBodyComponent& rb) {
+    // 线性速度上限
+    f32 linSpeed = glm::length(rb.Velocity);
+    if (linSpeed > s_Config.MaxVelocity) {
+        rb.Velocity = (rb.Velocity / linSpeed) * s_Config.MaxVelocity;
+    }
+    // 角速度上限
+    f32 angSpeed = glm::length(rb.AngularVelocity);
+    if (angSpeed > s_Config.MaxAngularVel) {
+        rb.AngularVelocity = (rb.AngularVelocity / angSpeed) * s_Config.MaxAngularVel;
+    }
+    // NaN/Inf 保护
+    if (std::isnan(rb.Velocity.x) || std::isinf(rb.Velocity.x)) rb.Velocity = {0,0,0};
+    if (std::isnan(rb.AngularVelocity.x) || std::isinf(rb.AngularVelocity.x)) rb.AngularVelocity = {0,0,0};
 }
 
 // ── 休眠系统 ────────────────────────────────────────────────
@@ -63,11 +94,10 @@ void PhysicsWorld::UpdateSleep(ECSWorld& world, f32 dt) {
 
         f32 linearSpeed = glm::length(rb.Velocity);
         f32 angularSpeed = glm::length(rb.AngularVelocity);
-        f32 totalEnergy = linearSpeed + angularSpeed;
 
-        if (totalEnergy < rb.SleepThreshold) {
+        if (linearSpeed < s_Config.SleepLinear && angularSpeed < s_Config.SleepAngular) {
             rb.SleepTimer += dt;
-            if (rb.SleepTimer >= rb.SleepDelay) {
+            if (rb.SleepTimer >= s_Config.SleepDelay) {
                 rb.IsSleeping = true;
                 rb.Velocity = {0, 0, 0};
                 rb.AngularVelocity = {0, 0, 0};
@@ -97,6 +127,10 @@ void PhysicsWorld::IntegrateForces(ECSWorld& world, f32 dt) {
         rb.Velocity += rb.Acceleration * dt;
         rb.Velocity *= (1.0f - rb.LinearDamping * dt);
 
+        // 速度钳制（防止数值爆炸）
+        ClampVelocities(rb);
+
+        // 半隐式 Euler
         tr->X += rb.Velocity.x * dt;
         tr->Y += rb.Velocity.y * dt;
         tr->Z += rb.Velocity.z * dt;
@@ -112,7 +146,92 @@ void PhysicsWorld::IntegrateForces(ECSWorld& world, f32 dt) {
     }
 }
 
-// ── 通用碰撞检测（根据形状分派）──────────────────────────
+// ── 复合碰撞体窄相 ─────────────────────────────────────────
+
+bool PhysicsWorld::TestSingleShape(ColliderShape shapeA, const ColliderComponent& colA,
+                                    const TransformComponent& trA, const glm::vec3& offsetA,
+                                    ColliderShape shapeB, const ColliderComponent& colB,
+                                    const TransformComponent& trB, const glm::vec3& offsetB,
+                                    glm::vec3& outNormal, f32& outPenetration) {
+    // 创建偏移后的 transform
+    TransformComponent trAOff = trA;
+    trAOff.X += offsetA.x * trA.ScaleX;
+    trAOff.Y += offsetA.y * trA.ScaleY;
+    trAOff.Z += offsetA.z * trA.ScaleZ;
+
+    TransformComponent trBOff = trB;
+    trBOff.X += offsetB.x * trB.ScaleX;
+    trBOff.Y += offsetB.y * trB.ScaleY;
+    trBOff.Z += offsetB.z * trB.ScaleZ;
+
+    // Box vs Box
+    if (shapeA == ColliderShape::Box && shapeB == ColliderShape::Box) {
+        AABB a = colA.GetWorldAABB(trAOff);
+        AABB b = colB.GetWorldAABB(trBOff);
+        return Collision::TestAABB(a, b, outNormal, outPenetration);
+    }
+
+    // Sphere vs Sphere
+    if (shapeA == ColliderShape::Sphere && shapeB == ColliderShape::Sphere) {
+        return Collision::TestSpheres(colA.GetWorldSphere(trAOff),
+                                      colB.GetWorldSphere(trBOff),
+                                      outNormal, outPenetration);
+    }
+
+    // Sphere vs Box
+    if (shapeA == ColliderShape::Sphere && shapeB == ColliderShape::Box) {
+        return Collision::TestSphereAABB(colA.GetWorldSphere(trAOff),
+                                         colB.GetWorldAABB(trBOff),
+                                         outNormal, outPenetration);
+    }
+    if (shapeA == ColliderShape::Box && shapeB == ColliderShape::Sphere) {
+        bool hit = Collision::TestSphereAABB(colB.GetWorldSphere(trBOff),
+                                              colA.GetWorldAABB(trAOff),
+                                              outNormal, outPenetration);
+        outNormal = -outNormal;
+        return hit;
+    }
+
+    // Capsule vs Capsule
+    if (shapeA == ColliderShape::Capsule && shapeB == ColliderShape::Capsule) {
+        return Collision::TestCapsules(colA.GetWorldCapsule(trAOff),
+                                       colB.GetWorldCapsule(trBOff),
+                                       outNormal, outPenetration);
+    }
+
+    // Capsule vs Box
+    if (shapeA == ColliderShape::Capsule && shapeB == ColliderShape::Box) {
+        return Collision::TestCapsuleAABB(colA.GetWorldCapsule(trAOff),
+                                          colB.GetWorldAABB(trBOff),
+                                          outNormal, outPenetration);
+    }
+    if (shapeA == ColliderShape::Box && shapeB == ColliderShape::Capsule) {
+        bool hit = Collision::TestCapsuleAABB(colB.GetWorldCapsule(trBOff),
+                                               colA.GetWorldAABB(trAOff),
+                                               outNormal, outPenetration);
+        outNormal = -outNormal;
+        return hit;
+    }
+
+    // Capsule vs Sphere
+    if (shapeA == ColliderShape::Capsule && shapeB == ColliderShape::Sphere) {
+        return Collision::TestCapsuleSphere(colA.GetWorldCapsule(trAOff),
+                                            colB.GetWorldSphere(trBOff),
+                                            outNormal, outPenetration);
+    }
+    if (shapeA == ColliderShape::Sphere && shapeB == ColliderShape::Capsule) {
+        bool hit = Collision::TestCapsuleSphere(colB.GetWorldCapsule(trBOff),
+                                                colA.GetWorldSphere(trAOff),
+                                                outNormal, outPenetration);
+        outNormal = -outNormal;
+        return hit;
+    }
+
+    // 后备
+    AABB a = colA.GetWorldAABB(trAOff);
+    AABB b = colB.GetWorldAABB(trBOff);
+    return Collision::TestAABB(a, b, outNormal, outPenetration);
+}
 
 bool PhysicsWorld::TestColliders(const ColliderComponent& colA, const TransformComponent& trA,
                                   const ColliderComponent& colB, const TransformComponent& trB,
@@ -121,79 +240,59 @@ bool PhysicsWorld::TestColliders(const ColliderComponent& colA, const TransformC
     if (!Collision::LayersCanCollide(colA.Layer, colA.Mask, colB.Layer, colB.Mask))
         return false;
 
-    auto shapeA = colA.Shape;
-    auto shapeB = colB.Shape;
+    bool hasSubA = !colA.SubShapes.empty();
+    bool hasSubB = !colB.SubShapes.empty();
 
-    // Box vs Box
-    if (shapeA == ColliderShape::Box && shapeB == ColliderShape::Box) {
-        AABB a, b;
-        a.Min = colA.LocalBounds.Min * glm::vec3(trA.ScaleX, trA.ScaleY, trA.ScaleZ) + glm::vec3(trA.X, trA.Y, trA.Z);
-        a.Max = colA.LocalBounds.Max * glm::vec3(trA.ScaleX, trA.ScaleY, trA.ScaleZ) + glm::vec3(trA.X, trA.Y, trA.Z);
-        b.Min = colB.LocalBounds.Min * glm::vec3(trB.ScaleX, trB.ScaleY, trB.ScaleZ) + glm::vec3(trB.X, trB.Y, trB.Z);
-        b.Max = colB.LocalBounds.Max * glm::vec3(trB.ScaleX, trB.ScaleY, trB.ScaleZ) + glm::vec3(trB.X, trB.Y, trB.Z);
-        return Collision::TestAABB(a, b, outNormal, outPenetration);
+    // 无复合碰撞体 — 直接测试主形状
+    if (!hasSubA && !hasSubB) {
+        return TestSingleShape(colA.Shape, colA, trA, {0,0,0},
+                               colB.Shape, colB, trB, {0,0,0},
+                               outNormal, outPenetration);
     }
 
-    // Sphere vs Sphere
-    if (shapeA == ColliderShape::Sphere && shapeB == ColliderShape::Sphere) {
-        Sphere a = colA.GetWorldSphere(trA);
-        Sphere b = colB.GetWorldSphere(trB);
-        return Collision::TestSpheres(a, b, outNormal, outPenetration);
+    // 复合碰撞体 — 遍历所有子形状对，找最深穿透
+    f32 maxPen = 0.0f;
+    bool anyHit = false;
+
+    auto testPair = [&](ColliderShape sA, const glm::vec3& offA,
+                        ColliderShape sB, const glm::vec3& offB) {
+        glm::vec3 n;
+        f32 pen;
+        if (TestSingleShape(sA, colA, trA, offA, sB, colB, trB, offB, n, pen)) {
+            if (pen > maxPen) {
+                maxPen = pen;
+                outNormal = n;
+                outPenetration = pen;
+            }
+            anyHit = true;
+        }
+    };
+
+    // 列出 A 的所有形状
+    struct ShapeEntry { ColliderShape shape; glm::vec3 offset; };
+    std::vector<ShapeEntry> shapesA, shapesB;
+
+    if (hasSubA) {
+        for (auto& sub : colA.SubShapes)
+            shapesA.push_back({sub.Shape, sub.Offset});
+    } else {
+        shapesA.push_back({colA.Shape, {0,0,0}});
     }
 
-    // Sphere vs Box
-    if (shapeA == ColliderShape::Sphere && shapeB == ColliderShape::Box) {
-        Sphere s = colA.GetWorldSphere(trA);
-        AABB aabb = colB.GetWorldAABB(trB);
-        return Collision::TestSphereAABB(s, aabb, outNormal, outPenetration);
-    }
-    if (shapeA == ColliderShape::Box && shapeB == ColliderShape::Sphere) {
-        Sphere s = colB.GetWorldSphere(trB);
-        AABB aabb = colA.GetWorldAABB(trA);
-        bool hit = Collision::TestSphereAABB(s, aabb, outNormal, outPenetration);
-        outNormal = -outNormal; // 反转法线方向
-        return hit;
+    if (hasSubB) {
+        for (auto& sub : colB.SubShapes)
+            shapesB.push_back({sub.Shape, sub.Offset});
+    } else {
+        shapesB.push_back({colB.Shape, {0,0,0}});
     }
 
-    // Capsule vs Capsule
-    if (shapeA == ColliderShape::Capsule && shapeB == ColliderShape::Capsule) {
-        Capsule a = colA.GetWorldCapsule(trA);
-        Capsule b = colB.GetWorldCapsule(trB);
-        return Collision::TestCapsules(a, b, outNormal, outPenetration);
+    for (auto& a : shapesA) {
+        for (auto& b : shapesB) {
+            testPair(a.shape, a.offset, b.shape, b.offset);
+        }
     }
 
-    // Capsule vs Box
-    if (shapeA == ColliderShape::Capsule && shapeB == ColliderShape::Box) {
-        Capsule cap = colA.GetWorldCapsule(trA);
-        AABB aabb = colB.GetWorldAABB(trB);
-        return Collision::TestCapsuleAABB(cap, aabb, outNormal, outPenetration);
-    }
-    if (shapeA == ColliderShape::Box && shapeB == ColliderShape::Capsule) {
-        Capsule cap = colB.GetWorldCapsule(trB);
-        AABB aabb = colA.GetWorldAABB(trA);
-        bool hit = Collision::TestCapsuleAABB(cap, aabb, outNormal, outPenetration);
-        outNormal = -outNormal;
-        return hit;
-    }
-
-    // Capsule vs Sphere
-    if (shapeA == ColliderShape::Capsule && shapeB == ColliderShape::Sphere) {
-        Capsule cap = colA.GetWorldCapsule(trA);
-        Sphere sph = colB.GetWorldSphere(trB);
-        return Collision::TestCapsuleSphere(cap, sph, outNormal, outPenetration);
-    }
-    if (shapeA == ColliderShape::Sphere && shapeB == ColliderShape::Capsule) {
-        Capsule cap = colB.GetWorldCapsule(trB);
-        Sphere sph = colA.GetWorldSphere(trA);
-        bool hit = Collision::TestCapsuleSphere(cap, sph, outNormal, outPenetration);
-        outNormal = -outNormal;
-        return hit;
-    }
-
-    // 后备: AABB vs AABB
-    AABB a = colA.GetWorldAABB(trA);
-    AABB b = colB.GetWorldAABB(trB);
-    return Collision::TestAABB(a, b, outNormal, outPenetration);
+    return anyHit;
 }
 
 // ── CCD ─────────────────────────────────────────────────────
@@ -205,12 +304,13 @@ CCDResult PhysicsWorld::SweepTest(ECSWorld& world, Entity e,
     auto* tr = world.GetComponent<TransformComponent>(e);
     if (!col || !tr) return result;
 
-    AABB startAABB = col->GetWorldAABB(*tr);
     f32 dispLen = glm::length(displacement);
     if (dispLen < 1e-6f) return result;
 
     glm::vec3 dir = displacement / dispLen;
 
+    // 根据碰撞体形状选择扫掠策略
+    AABB startAABB = col->GetWorldAABB(*tr);
     AABB endAABB;
     endAABB.Min = startAABB.Min + displacement;
     endAABB.Max = startAABB.Max + displacement;
@@ -228,7 +328,6 @@ CCDResult PhysicsWorld::SweepTest(ECSWorld& world, Entity e,
         if (other == e) continue;
 
         ColliderComponent& otherCol = colPool.Data(i);
-        // 碰撞层过滤
         if (!Collision::LayersCanCollide(col->Layer, col->Mask, otherCol.Layer, otherCol.Mask))
             continue;
 
@@ -238,26 +337,52 @@ CCDResult PhysicsWorld::SweepTest(ECSWorld& world, Entity e,
         AABB otherAABB = otherCol.GetWorldAABB(*otherTr);
         if (!Collision::TestAABB(sweepAABB, otherAABB)) continue;
 
-        AABB minkowski;
-        glm::vec3 halfA = startAABB.HalfSize();
-        minkowski.Min = otherAABB.Min - halfA;
-        minkowski.Max = otherAABB.Max + halfA;
+        // 精确 TOI：根据源碰撞体形状选择扫掠方式
+        f32 toi = 1.0f;
+        glm::vec3 hitNormal = {0,1,0};
+        bool hit = false;
 
-        Ray sweepRay;
-        sweepRay.Origin = startAABB.Center();
-        sweepRay.Direction = dir;
+        if (col->Shape == ColliderShape::Sphere) {
+            // 球体扫掠：膨胀目标 AABB
+            Sphere sph = col->GetWorldSphere(*tr);
+            AABB expanded;
+            expanded.Min = otherAABB.Min - glm::vec3(sph.Radius);
+            expanded.Max = otherAABB.Max + glm::vec3(sph.Radius);
 
-        HitResult hit = Collision::RaycastAABB(sweepRay, minkowski);
-        if (hit.Hit && hit.Distance >= 0.0f && hit.Distance <= dispLen) {
-            f32 toi = hit.Distance / dispLen;
-            if (toi < minTOI) {
-                minTOI = toi;
-                result.Hit = true;
-                result.TOI = toi;
-                result.HitPoint = hit.Point;
-                result.HitNormal = hit.Normal;
-                result.HitEntity = other;
+            Ray sweepRay;
+            sweepRay.Origin = sph.Center;
+            sweepRay.Direction = dir;
+            HitResult h = Collision::RaycastAABB(sweepRay, expanded);
+            if (h.Hit && h.Distance >= 0 && h.Distance <= dispLen) {
+                toi = h.Distance / dispLen;
+                hitNormal = h.Normal;
+                hit = true;
             }
+        } else {
+            // AABB/Capsule: Minkowski AABB 扫掠
+            glm::vec3 halfA = startAABB.HalfSize();
+            AABB minkowski;
+            minkowski.Min = otherAABB.Min - halfA;
+            minkowski.Max = otherAABB.Max + halfA;
+
+            Ray sweepRay;
+            sweepRay.Origin = startAABB.Center();
+            sweepRay.Direction = dir;
+            HitResult h = Collision::RaycastAABB(sweepRay, minkowski);
+            if (h.Hit && h.Distance >= 0 && h.Distance <= dispLen) {
+                toi = h.Distance / dispLen;
+                hitNormal = h.Normal;
+                hit = true;
+            }
+        }
+
+        if (hit && toi < minTOI) {
+            minTOI = toi;
+            result.Hit = true;
+            result.TOI = toi;
+            result.HitNormal = hitNormal;
+            result.HitPoint = glm::vec3(tr->X, tr->Y, tr->Z) + displacement * toi;
+            result.HitEntity = other;
         }
     }
 
@@ -284,6 +409,7 @@ void PhysicsWorld::PerformCCD(ECSWorld& world, f32 dt) {
         AABB worldAABB = col->GetWorldAABB(*tr);
         glm::vec3 halfSize = worldAABB.HalfSize();
         f32 minHalf = std::min({halfSize.x, halfSize.y, halfSize.z});
+        if (minHalf < 1e-6f) minHalf = 0.1f; // 保护零尺寸
 
         if (dispLen < minHalf) continue;
 
@@ -300,6 +426,7 @@ void PhysicsWorld::PerformCCD(ECSWorld& world, f32 dt) {
                 rb.Velocity -= ccd.HitNormal * vn * (1.0f + rb.Restitution);
             }
             rb.WakeUp();
+            ClampVelocities(rb);
         }
     }
 }
@@ -326,7 +453,6 @@ void PhysicsWorld::DetectCollisions(ECSWorld& world) {
         auto* tr = world.GetComponent<TransformComponent>(e);
         if (!tr) continue;
 
-        // 休眠跳过
         auto* rb = world.GetComponent<RigidBodyComponent>(e);
         if (rb && rb->IsSleeping) continue;
 
@@ -351,9 +477,7 @@ void PhysicsWorld::DetectCollisions(ECSWorld& world) {
             s_Pairs.push_back(pair);
             s_CurrentPairs.insert({entities[i].e, entities[j].e});
 
-            if (s_Callback) {
-                s_Callback(pair.EntityA, pair.EntityB, pair.Normal);
-            }
+            if (s_Callback) s_Callback(pair.EntityA, pair.EntityB, pair.Normal);
 
             CollisionEvent evt(pair.EntityA, pair.EntityB,
                                normal.x, normal.y, normal.z, penetration);
@@ -364,10 +488,8 @@ void PhysicsWorld::DetectCollisions(ECSWorld& world) {
     if (entities.size() <= 32) {
         for (size_t i = 0; i < entities.size(); i++) {
             for (size_t j = i + 1; j < entities.size(); j++) {
-                // AABB 粗筛
-                if (Collision::TestAABB(entities[i].worldAABB, entities[j].worldAABB)) {
+                if (Collision::TestAABB(entities[i].worldAABB, entities[j].worldAABB))
                     narrowPhase(i, j);
-                }
             }
         }
     } else {
@@ -381,46 +503,37 @@ void PhysicsWorld::DetectCollisions(ECSWorld& world) {
         for (auto& [a, b] : potentialPairs) {
             auto itA = entityIndex.find(a);
             auto itB = entityIndex.find(b);
-            if (itA != entityIndex.end() && itB != entityIndex.end()) {
+            if (itA != entityIndex.end() && itB != entityIndex.end())
                 narrowPhase(itA->second, itB->second);
-            }
         }
     }
 }
 
-// ── 碰撞事件更新 (Enter/Stay/Exit) ─────────────────────────
+// ── 碰撞事件 ────────────────────────────────────────────────
 
 void PhysicsWorld::UpdateCollisionEvents() {
     s_CollisionEvents.clear();
 
-    // Enter: 本帧有、上帧没有
     for (auto& pair : s_CurrentPairs) {
-        if (s_PreviousPairs.find(pair) == s_PreviousPairs.end()) {
+        if (s_PreviousPairs.find(pair) == s_PreviousPairs.end())
             s_CollisionEvents.push_back({pair.a, pair.b, CollisionState::Enter});
-        } else {
+        else
             s_CollisionEvents.push_back({pair.a, pair.b, CollisionState::Stay});
-        }
     }
 
-    // Exit: 上帧有、本帧没有
     for (auto& pair : s_PreviousPairs) {
-        if (s_CurrentPairs.find(pair) == s_CurrentPairs.end()) {
+        if (s_CurrentPairs.find(pair) == s_CurrentPairs.end())
             s_CollisionEvents.push_back({pair.a, pair.b, CollisionState::Exit});
-        }
     }
 
-    // 通知回调
     if (s_EventCallback) {
-        for (auto& evt : s_CollisionEvents) {
-            s_EventCallback(evt);
-        }
+        for (auto& evt : s_CollisionEvents) s_EventCallback(evt);
     }
 
-    // 交换帧
     s_PreviousPairs = s_CurrentPairs;
 }
 
-// ── 碰撞响应 ────────────────────────────────────────────────
+// ── 碰撞响应（含数值稳定性保护）─────────────────────────
 
 void PhysicsWorld::ResolveCollisions(ECSWorld& world) {
     for (auto& pair : s_Pairs) {
@@ -438,34 +551,47 @@ void PhysicsWorld::ResolveCollisions(ECSWorld& world) {
         bool staticB = (!rbB || rbB->IsStatic);
         if (staticA && staticB) continue;
 
-        // 唤醒碰撞中的休眠物体
         if (rbA && rbA->IsSleeping) rbA->WakeUp();
         if (rbB && rbB->IsSleeping) rbB->WakeUp();
 
-        // 使用碰撞双方材质的混合值
-        f32 restitution = std::min(colA->Material.Restitution, colB->Material.Restitution);
-        f32 friction = std::sqrt(colA->Material.Friction * colB->Material.Friction);
+        // 安全计算逆质量（有质量比上限保护）
+        f32 invMassA = staticA ? 0.0f : rbA->InvMass();
+        f32 invMassB = staticB ? 0.0f : rbB->InvMass();
 
-        f32 invMassA = staticA ? 0.0f : 1.0f / rbA->Mass;
-        f32 invMassB = staticB ? 0.0f : 1.0f / rbB->Mass;
-        f32 totalInvMass = invMassA + invMassB;
-
-        // 位置分离
-        if (totalInvMass > 0) {
-            glm::vec3 correction = pair.Normal * pair.Penetration / totalInvMass;
-            if (trA && !staticA) {
-                trA->X -= correction.x * invMassA;
-                trA->Y -= correction.y * invMassA;
-                trA->Z -= correction.z * invMassA;
-            }
-            if (trB && !staticB) {
-                trB->X += correction.x * invMassB;
-                trB->Y += correction.y * invMassB;
-                trB->Z += correction.z * invMassB;
+        // 质量比钳制（防止极端质量比导致抖动）
+        if (invMassA > 0 && invMassB > 0) {
+            f32 ratio = std::max(invMassA, invMassB) / std::min(invMassA, invMassB);
+            if (ratio > s_Config.MaxMassRatio) {
+                f32 scaleFactor = s_Config.MaxMassRatio / ratio;
+                if (invMassA > invMassB) invMassA *= scaleFactor;
+                else invMassB *= scaleFactor;
             }
         }
 
-        // 冲量
+        f32 totalInvMass = invMassA + invMassB;
+        if (totalInvMass < 1e-8f) continue;
+
+        // 材质混合
+        f32 restitution = std::min(colA->Material.Restitution, colB->Material.Restitution);
+        f32 friction = std::sqrt(colA->Material.Friction * colB->Material.Friction);
+
+        // 位置分离（含穿透容差 slop + Baumgarte 偏差）
+        f32 correctionMag = std::max(pair.Penetration - s_Config.PenetrationSlop, 0.0f)
+                          * s_Config.BaumgarteBias / totalInvMass;
+        glm::vec3 correction = pair.Normal * correctionMag;
+
+        if (trA && !staticA) {
+            trA->X -= correction.x * invMassA;
+            trA->Y -= correction.y * invMassA;
+            trA->Z -= correction.z * invMassA;
+        }
+        if (trB && !staticB) {
+            trB->X += correction.x * invMassB;
+            trB->Y += correction.y * invMassB;
+            trB->Z += correction.z * invMassB;
+        }
+
+        // 法向冲量
         glm::vec3 velA = staticA ? glm::vec3(0) : rbA->Velocity;
         glm::vec3 velB = staticB ? glm::vec3(0) : rbB->Velocity;
         glm::vec3 relVel = velA - velB;
@@ -477,7 +603,7 @@ void PhysicsWorld::ResolveCollisions(ECSWorld& world) {
         if (rbA && !rbA->IsStatic) rbA->Velocity += impulse * invMassA;
         if (rbB && !rbB->IsStatic) rbB->Velocity -= impulse * invMassB;
 
-        // 摩擦
+        // 摩擦冲量
         velA = staticA ? glm::vec3(0) : rbA->Velocity;
         velB = staticB ? glm::vec3(0) : rbB->Velocity;
         relVel = velA - velB;
@@ -493,17 +619,19 @@ void PhysicsWorld::ResolveCollisions(ECSWorld& world) {
             if (rbA && !rbA->IsStatic) rbA->Velocity += frictionImpulse * invMassA;
             if (rbB && !rbB->IsStatic) rbB->Velocity -= frictionImpulse * invMassB;
         }
+
+        // 钳制结果速度
+        if (rbA && !rbA->IsStatic) ClampVelocities(*rbA);
+        if (rbB && !rbB->IsStatic) ClampVelocities(*rbB);
     }
 }
 
 // ── 约束求解 ────────────────────────────────────────────────
 
 void PhysicsWorld::SolveConstraints(ECSWorld& world, f32 dt) {
-    if (s_Constraints.empty()) return;
-
-    for (i32 iter = 0; iter < CONSTRAINT_ITERATIONS; iter++) {
+    for (i32 iter = 0; iter < s_Config.ConstraintIters; iter++) {
         for (auto& c : s_Constraints) {
-            if (!c.Enabled) continue;
+            if (!c.Active_ || !c.Enabled) continue;
             if (c.EntityA == INVALID_ENTITY || c.EntityB == INVALID_ENTITY) continue;
 
             auto* trA = world.GetComponent<TransformComponent>(c.EntityA);
@@ -517,8 +645,8 @@ void PhysicsWorld::SolveConstraints(ECSWorld& world, f32 dt) {
             bool staticB = (!rbB || rbB->IsStatic);
             if (staticA && staticB) continue;
 
-            f32 invMassA = staticA ? 0.0f : 1.0f / rbA->Mass;
-            f32 invMassB = staticB ? 0.0f : 1.0f / rbB->Mass;
+            f32 invMassA = staticA ? 0.0f : rbA->InvMass();
+            f32 invMassB = staticB ? 0.0f : rbB->InvMass();
             f32 totalInvMass = invMassA + invMassB;
             if (totalInvMass < 1e-8f) continue;
 
@@ -535,18 +663,18 @@ void PhysicsWorld::SolveConstraints(ECSWorld& world, f32 dt) {
 
                 glm::vec3 dir = delta / currentDist;
                 f32 error = currentDist - targetDist;
-                f32 baumgarte = 0.2f;
-                glm::vec3 correction = dir * error * baumgarte / totalInvMass;
+                glm::vec3 correction = dir * error * s_Config.BaumgarteBias / totalInvMass;
 
                 if (!staticA) { trA->X += correction.x * invMassA; trA->Y += correction.y * invMassA; trA->Z += correction.z * invMassA; }
                 if (!staticB) { trB->X -= correction.x * invMassB; trB->Y -= correction.y * invMassB; trB->Z -= correction.z * invMassB; }
 
                 if (rbA || rbB) {
-                    glm::vec3 relVel = (staticA ? glm::vec3(0) : rbA->Velocity) - (staticB ? glm::vec3(0) : rbB->Velocity);
+                    glm::vec3 relVel = (staticA ? glm::vec3(0) : rbA->Velocity) -
+                                       (staticB ? glm::vec3(0) : rbB->Velocity);
                     f32 velAlongDir = glm::dot(relVel, dir);
-                    glm::vec3 velCorrection = dir * velAlongDir / totalInvMass;
-                    if (rbA && !rbA->IsStatic) rbA->Velocity -= velCorrection * invMassA;
-                    if (rbB && !rbB->IsStatic) rbB->Velocity += velCorrection * invMassB;
+                    glm::vec3 velCorr = dir * velAlongDir / totalInvMass;
+                    if (rbA && !rbA->IsStatic) rbA->Velocity -= velCorr * invMassA;
+                    if (rbB && !rbB->IsStatic) rbB->Velocity += velCorr * invMassB;
                 }
                 break;
             }
@@ -558,13 +686,14 @@ void PhysicsWorld::SolveConstraints(ECSWorld& world, f32 dt) {
 
                 glm::vec3 dir = delta / currentDist;
                 f32 stretch = currentDist - c.Distance;
-                glm::vec3 relVel = (staticA ? glm::vec3(0) : rbA->Velocity) - (staticB ? glm::vec3(0) : rbB->Velocity);
+                glm::vec3 relVel = (staticA ? glm::vec3(0) : rbA->Velocity) -
+                                   (staticB ? glm::vec3(0) : rbB->Velocity);
                 f32 velAlongDir = glm::dot(relVel, dir);
                 f32 forceMag = c.Stiffness * stretch + c.Damping * velAlongDir;
                 glm::vec3 force = dir * forceMag;
 
-                if (rbA && !rbA->IsStatic) rbA->Velocity += force * (invMassA * dt);
-                if (rbB && !rbB->IsStatic) rbB->Velocity -= force * (invMassB * dt);
+                if (rbA && !rbA->IsStatic) { rbA->Velocity += force * (invMassA * dt); ClampVelocities(*rbA); }
+                if (rbB && !rbB->IsStatic) { rbB->Velocity -= force * (invMassB * dt); ClampVelocities(*rbB); }
                 break;
             }
 
@@ -580,12 +709,10 @@ void PhysicsWorld::SolveConstraints(ECSWorld& world, f32 dt) {
 
                 glm::vec3 axis = glm::normalize(c.HingeAxis);
                 if (rbA && !rbA->IsStatic) {
-                    f32 angVelAlong = glm::dot(rbA->AngularVelocity, axis);
-                    rbA->AngularVelocity = axis * angVelAlong;
+                    rbA->AngularVelocity = axis * glm::dot(rbA->AngularVelocity, axis);
                 }
                 if (rbB && !rbB->IsStatic) {
-                    f32 angVelAlong = glm::dot(rbB->AngularVelocity, axis);
-                    rbB->AngularVelocity = axis * angVelAlong;
+                    rbB->AngularVelocity = axis * glm::dot(rbB->AngularVelocity, axis);
                 }
                 break;
             }
@@ -629,7 +756,7 @@ void PhysicsWorld::ResolveGroundCollisions(ECSWorld& world) {
     }
 }
 
-// ── 角色控制器 ──────────────────────────────────────────────
+// ── 角色控制器（扫掠检测替代射线）──────────────────────────
 
 void PhysicsWorld::UpdateCharacterControllers(ECSWorld& world, f32 dt) {
     auto& ccPool = world.GetComponentArray<CharacterControllerComponent>();
@@ -641,38 +768,73 @@ void PhysicsWorld::UpdateCharacterControllers(ECSWorld& world, f32 dt) {
         auto* tr = world.GetComponent<TransformComponent>(e);
         if (!tr) continue;
 
-        // 胶囊底部
         f32 halfH = (cc.Height - 2.0f * cc.Radius) * 0.5f;
         f32 feetY = tr->Y - halfH - cc.Radius;
 
-        // 地面检测 — 脚底是否接触地面
         cc.IsGrounded = (feetY <= s_GroundHeight + 0.05f);
 
-        // 重力
+        // 重力 + 跳跃
         if (cc.IsGrounded) {
             if (cc.VerticalSpeed < 0) cc.VerticalSpeed = 0;
-
-            // 跳跃
             if (cc.WantsJump) {
                 cc.VerticalSpeed = cc.JumpForce;
                 cc.IsGrounded = false;
-                cc.WantsJump = false;
             }
         } else {
             cc.VerticalSpeed += cc.Gravity * dt;
         }
 
-        // 水平移动
+        // 水平移动 — 用扫掠检测碰撞
         glm::vec3 moveDir = cc.MoveDir;
         f32 moveLen = glm::length(moveDir);
         if (moveLen > 1e-4f) {
-            moveDir /= moveLen; // 归一化
+            moveDir /= moveLen;
             if (moveLen > 1.0f) moveLen = 1.0f;
-            tr->X += moveDir.x * cc.MoveSpeed * moveLen * dt;
-            tr->Z += moveDir.z * cc.MoveSpeed * moveLen * dt;
+
+            glm::vec3 displacement = glm::vec3(moveDir.x, 0, moveDir.z)
+                                   * cc.MoveSpeed * moveLen * dt;
+
+            // 构建临时胶囊碰撞体进行扫掠
+            auto* col = world.GetComponent<ColliderComponent>(e);
+            if (col) {
+                CCDResult sweep = SweepTest(world, e, displacement);
+                if (sweep.Hit && sweep.TOI < 1.0f) {
+                    // 滑动：去掉法线分量继续运动
+                    f32 safeT = std::max(0.0f, sweep.TOI - 0.01f);
+                    glm::vec3 safeDist = displacement * safeT;
+                    tr->X += safeDist.x;
+                    tr->Z += safeDist.z;
+
+                    // 滑动分量
+                    glm::vec3 remaining = displacement * (1.0f - safeT);
+                    glm::vec3 slideDir = remaining - sweep.HitNormal * glm::dot(remaining, sweep.HitNormal);
+                    tr->X += slideDir.x;
+                    tr->Z += slideDir.z;
+
+                    // 台阶检测
+                    if (cc.IsGrounded && std::abs(sweep.HitNormal.y) < 0.3f) {
+                        // 水平碰撞 → 检查是否可以踏上
+                        glm::vec3 stepUp = {0, cc.StepHeight, 0};
+                        TransformComponent trStep = *tr;
+                        trStep.Y += cc.StepHeight;
+                        // 简化：直接抬升检测
+                        f32 slopeAngle = glm::degrees(std::acos(
+                            glm::clamp(std::abs(sweep.HitNormal.y), 0.0f, 1.0f)));
+                        if (slopeAngle > 90.0f - cc.SlopeLimit) {
+                            tr->Y += cc.StepHeight;
+                        }
+                    }
+                } else {
+                    tr->X += displacement.x;
+                    tr->Z += displacement.z;
+                }
+            } else {
+                tr->X += displacement.x;
+                tr->Z += displacement.z;
+            }
         }
 
-        // 垂直移动
+        // 垂直
         tr->Y += cc.VerticalSpeed * dt;
 
         // 地面钳制
@@ -683,31 +845,6 @@ void PhysicsWorld::UpdateCharacterControllers(ECSWorld& world, f32 dt) {
             cc.IsGrounded = true;
         }
 
-        // 台阶检测（简化版：如果前方有矮障碍物，自动抬升）
-        if (moveLen > 1e-4f && cc.IsGrounded) {
-            // 检测前方障碍
-            Ray stepRay;
-            stepRay.Origin = {tr->X, tr->Y - halfH + cc.StepHeight, tr->Z};
-            stepRay.Direction = {moveDir.x, 0, moveDir.z};
-            if (glm::length(stepRay.Direction) > 1e-4f)
-                stepRay.Direction = glm::normalize(stepRay.Direction);
-
-            Entity hitEnt;
-            HitResult hit = Raycast(world, stepRay, &hitEnt, cc.Mask);
-            if (hit.Hit && hit.Distance < cc.Radius * 2.0f) {
-                // 检测头顶空间
-                Ray upRay;
-                upRay.Origin = {tr->X + moveDir.x * cc.Radius * 2.0f,
-                                tr->Y - halfH, tr->Z + moveDir.z * cc.Radius * 2.0f};
-                upRay.Direction = {0, 1, 0};
-                HitResult upHit = Raycast(world, upRay, nullptr, cc.Mask);
-                if (!upHit.Hit || upHit.Distance > cc.StepHeight * 2.0f) {
-                    tr->Y += cc.StepHeight;
-                }
-            }
-        }
-
-        // 清零移动请求
         cc.MoveDir = {0, 0, 0};
         cc.WantsJump = false;
     }
@@ -725,7 +862,6 @@ HitResult PhysicsWorld::Raycast(ECSWorld& world, const Ray& ray,
 
     for (u32 i = 0; i < count; i++) {
         ColliderComponent& col = colPool.Data(i);
-        // 层过滤
         if ((col.Layer & layerMask) == 0) continue;
 
         Entity e = colPool.GetEntity(i);
@@ -757,62 +893,98 @@ HitResult PhysicsWorld::Raycast(ECSWorld& world, const Ray& ray,
 
 // ── 设置/获取 ───────────────────────────────────────────────
 
-void PhysicsWorld::SetCollisionCallback(CollisionCallback cb) { s_Callback = cb; }
-void PhysicsWorld::SetCollisionEventCallback(CollisionEventCallback cb) { s_EventCallback = cb; }
+void PhysicsWorld::SetCollisionCallback(CollisionCallback cb) { std::lock_guard<std::mutex> lock(s_Mutex); s_Callback = cb; }
+void PhysicsWorld::SetCollisionEventCallback(CollisionEventCallback cb) { std::lock_guard<std::mutex> lock(s_Mutex); s_EventCallback = cb; }
 const std::vector<CollisionPair>& PhysicsWorld::GetCollisionPairs() { return s_Pairs; }
 const std::vector<CollisionEventData>& PhysicsWorld::GetCollisionEvents() { return s_CollisionEvents; }
 void PhysicsWorld::SetGroundPlane(f32 height) { s_GroundHeight = height; }
 f32  PhysicsWorld::GetGroundPlane() { return s_GroundHeight; }
 
-// ── 力 / 冲量 / 力矩 ────────────────────────────────────────
+// ── 力 / 冲量 / 力矩（线程安全 + 唤醒 + 钳制）──────────────
 
 void PhysicsWorld::AddForce(ECSWorld& world, Entity e, const glm::vec3& force) {
     auto* rb = world.GetComponent<RigidBodyComponent>(e);
-    if (!rb || rb->IsStatic || rb->Mass <= 0) return;
+    if (!rb || rb->IsStatic || rb->Mass <= 1e-6f) return;
     rb->WakeUp();
     rb->Acceleration += force / rb->Mass;
 }
 
 void PhysicsWorld::AddImpulse(ECSWorld& world, Entity e, const glm::vec3& impulse) {
     auto* rb = world.GetComponent<RigidBodyComponent>(e);
-    if (!rb || rb->IsStatic || rb->Mass <= 0) return;
+    if (!rb || rb->IsStatic || rb->Mass <= 1e-6f) return;
     rb->WakeUp();
     rb->Velocity += impulse / rb->Mass;
+    ClampVelocities(*rb);
 }
 
 void PhysicsWorld::AddTorque(ECSWorld& world, Entity e, const glm::vec3& torque) {
     auto* rb = world.GetComponent<RigidBodyComponent>(e);
-    if (!rb || rb->IsStatic || rb->Mass <= 0) return;
+    if (!rb || rb->IsStatic || rb->Mass <= 1e-6f) return;
     rb->WakeUp();
     rb->AngularVelocity += torque / rb->Mass;
+    ClampVelocities(*rb);
 }
 
-// ── 约束管理 ────────────────────────────────────────────────
+// ── 约束管理（Generation-Based 槽位复用）────────────────────
 
-u32 PhysicsWorld::AddConstraint(const Constraint& c) {
-    u32 id = s_ConstraintIdCounter++;
-    s_Constraints.push_back(c);
-    return id;
-}
+ConstraintHandle PhysicsWorld::AddConstraint(const Constraint& c) {
+    std::lock_guard<std::mutex> lock(s_Mutex);
 
-void PhysicsWorld::RemoveConstraint(u32 id) {
-    if (id < s_Constraints.size()) {
-        s_Constraints.erase(s_Constraints.begin() + id);
+    ConstraintHandle handle;
+
+    if (!s_FreeSlots.empty()) {
+        // 复用空闲槽位
+        u32 idx = s_FreeSlots.back();
+        s_FreeSlots.pop_back();
+        s_Constraints[idx] = c;
+        s_Constraints[idx].Generation_++;
+        s_Constraints[idx].Active_ = true;
+        handle.Index = idx;
+        handle.Generation = s_Constraints[idx].Generation_;
+    } else {
+        // 新建槽位
+        Constraint newC = c;
+        newC.Generation_ = 1;
+        newC.Active_ = true;
+        handle.Index = (u32)s_Constraints.size();
+        handle.Generation = 1;
+        s_Constraints.push_back(newC);
     }
+
+    return handle;
 }
 
-Constraint* PhysicsWorld::GetConstraint(u32 id) {
-    if (id < s_Constraints.size()) return &s_Constraints[id];
-    return nullptr;
+void PhysicsWorld::RemoveConstraint(ConstraintHandle handle) {
+    std::lock_guard<std::mutex> lock(s_Mutex);
+
+    if (handle.Index >= s_Constraints.size()) return;
+    auto& c = s_Constraints[handle.Index];
+    if (!c.Active_ || c.Generation_ != handle.Generation) return; // 已失效
+
+    c.Active_ = false;
+    c.Enabled = false;
+    s_FreeSlots.push_back(handle.Index);
+}
+
+Constraint* PhysicsWorld::GetConstraint(ConstraintHandle handle) {
+    if (handle.Index >= s_Constraints.size()) return nullptr;
+    auto& c = s_Constraints[handle.Index];
+    if (!c.Active_ || c.Generation_ != handle.Generation) return nullptr;
+    return &c;
 }
 
 void PhysicsWorld::ClearConstraints() {
+    std::lock_guard<std::mutex> lock(s_Mutex);
     s_Constraints.clear();
-    s_ConstraintIdCounter = 0;
+    s_FreeSlots.clear();
 }
 
 u32 PhysicsWorld::GetConstraintCount() {
-    return (u32)s_Constraints.size();
+    u32 count = 0;
+    for (auto& c : s_Constraints) {
+        if (c.Active_) count++;
+    }
+    return count;
 }
 
 } // namespace Engine
