@@ -114,33 +114,99 @@ struct MaterialComponent : public Component {
     f32 EmissiveIntensity = 1.0f;
 };
 
-// ── ComponentPool —— 类型擦除的组件存储 ─────────────────────
+/// 旋转动画组件 — 支持多轴自动旋转（替代硬编码的 CenterCube 逻辑）
+struct RotationAnimComponent : public Component {
+    f32 SpeedY = 0.6f;  // 绕 Y 轴旋转速度 (rad/s)
+    f32 SpeedX = 0.2f;  // 绕 X 轴旋转速度 (rad/s)
+    f32 SpeedZ = 0.0f;  // 绕 Z 轴旋转速度 (rad/s)
+};
 
-class ComponentPool {
+// ── IComponentPool —— 类型擦除的组件池基类 ──────────────────
+
+class IComponentPool {
 public:
-    template<typename T>
+    virtual ~IComponentPool() = default;
+    virtual void Remove(Entity e) = 0;
+    virtual bool Has(Entity e) const = 0;
+};
+
+// ── ComponentArray<T> —— Sparse Set SoA 组件存储 ────────────
+//
+// 数据布局:
+//   m_Dense   : [T, T, T, ...]       — 组件数据紧密排列（缓存友好）
+//   m_Entities: [e3, e1, e7, ...]     — 与 m_Dense 对应的 Entity ID
+//   m_Sparse  : [-, 1, -, 0, -, -, -, 2]  — Entity → Dense 索引映射
+//
+// 删除操作使用 swap-and-pop 保持紧密排列。
+
+template<typename T>
+class ComponentArray : public IComponentPool {
+public:
+    /// 获取组件指针（O(1) 数组下标）
     T* Get(Entity e) {
-        auto it = m_Data.find(e);
-        if (it == m_Data.end()) return nullptr;
-        return static_cast<T*>(it->second.get());
+        if (e >= m_Sparse.size() || m_Sparse[e] == INVALID_INDEX)
+            return nullptr;
+        return &m_Dense[m_Sparse[e]];
     }
 
-    template<typename T, typename... Args>
+    /// 添加组件（如已存在则覆盖）
+    template<typename... Args>
     T* Add(Entity e, Args&&... args) {
-        auto ptr = std::make_unique<T>(std::forward<Args>(args)...);
-        T* raw = ptr.get();
-        m_Data[e] = std::move(ptr);
-        return raw;
+        if (e >= m_Sparse.size())
+            m_Sparse.resize((size_t)e + 1, INVALID_INDEX);
+
+        if (m_Sparse[e] != INVALID_INDEX) {
+            // 已存在 — 原地重构
+            m_Dense[m_Sparse[e]] = T(std::forward<Args>(args)...);
+            return &m_Dense[m_Sparse[e]];
+        }
+
+        u32 idx = (u32)m_Dense.size();
+        m_Dense.emplace_back(std::forward<Args>(args)...);
+        m_Entities.push_back(e);
+        m_Sparse[e] = idx;
+        return &m_Dense[idx];
     }
 
-    void Remove(Entity e) { m_Data.erase(e); }
-    bool Has(Entity e) const { return m_Data.count(e) > 0; }
+    /// 删除组件（swap-and-pop 保持紧密）
+    void Remove(Entity e) override {
+        if (e >= m_Sparse.size() || m_Sparse[e] == INVALID_INDEX)
+            return;
 
-    auto begin() { return m_Data.begin(); }
-    auto end() { return m_Data.end(); }
+        u32 idx = m_Sparse[e];
+        u32 lastIdx = (u32)m_Dense.size() - 1;
+
+        if (idx != lastIdx) {
+            Entity lastEntity = m_Entities[lastIdx];
+            m_Dense[idx] = std::move(m_Dense[lastIdx]);
+            m_Entities[idx] = lastEntity;
+            m_Sparse[lastEntity] = idx;
+        }
+
+        m_Dense.pop_back();
+        m_Entities.pop_back();
+        m_Sparse[e] = INVALID_INDEX;
+    }
+
+    bool Has(Entity e) const override {
+        return e < m_Sparse.size() && m_Sparse[e] != INVALID_INDEX;
+    }
+
+    /// SoA 遍历支持
+    u32  Size()  const { return (u32)m_Dense.size(); }
+    T&   Data(u32 i)   { return m_Dense[i]; }
+    Entity GetEntity(u32 i) const { return m_Entities[i]; }
+
+    /// 直接访问底层数组（高性能批处理）
+    T*       RawData()     { return m_Dense.data(); }
+    Entity*  RawEntities() { return m_Entities.data(); }
 
 private:
-    std::unordered_map<Entity, Scope<Component>> m_Data;
+    static constexpr u32 INVALID_INDEX = ~0u;
+
+    std::vector<T>      m_Dense;      // 组件数据 — 紧密排列（SoA 核心）
+    std::vector<Entity> m_Entities;   // 与 m_Dense 对应的实体 ID
+    std::vector<u32>    m_Sparse;     // Entity → Dense 索引 （稀疏数组）
 };
 
 // ── System 基类 ─────────────────────────────────────────────
@@ -169,7 +235,7 @@ public:
     /// 销毁实体
     void DestroyEntity(Entity e) {
         for (auto& [type, pool] : m_Pools) {
-            pool.Remove(e);
+            pool->Remove(e);
         }
         std::erase(m_Entities, e);
     }
@@ -178,14 +244,14 @@ public:
     template<typename T, typename... Args>
     T& AddComponent(Entity e, Args&&... args) {
         auto& pool = GetPool<T>();
-        return *pool.template Add<T>(e, std::forward<Args>(args)...);
+        return *pool.Add(e, std::forward<Args>(args)...);
     }
 
     /// 获取组件（可能为 nullptr）
     template<typename T>
     T* GetComponent(Entity e) {
         auto& pool = GetPool<T>();
-        return pool.template Get<T>(e);
+        return pool.Get(e);
     }
 
     /// 是否拥有某组件
@@ -194,12 +260,13 @@ public:
         return GetPool<T>().Has(e);
     }
 
-    /// 遍历所有拥有指定组件的实体（模板回调，避免 std::function 堆分配）
+    /// 遍历所有拥有指定组件的实体（SoA 线性扫描，极致缓存命中）
     template<typename T, typename Func>
     void ForEach(Func&& fn) {
         auto& pool = GetPool<T>();
-        for (auto& [e, comp] : pool) {
-            fn(e, *static_cast<T*>(comp.get()));
+        u32 count = pool.Size();
+        for (u32 i = 0; i < count; i++) {
+            fn(pool.GetEntity(i), pool.Data(i));
         }
     }
 
@@ -260,16 +327,27 @@ public:
         return roots;
     }
 
+    /// 获取某类型的组件数组（高级用法，直接访问 SoA 数据）
+    template<typename T>
+    ComponentArray<T>& GetComponentArray() { return GetPool<T>(); }
+
 private:
     template<typename T>
-    ComponentPool& GetPool() {
+    ComponentArray<T>& GetPool() {
         auto typeIdx = std::type_index(typeid(T));
-        return m_Pools[typeIdx];
+        auto it = m_Pools.find(typeIdx);
+        if (it != m_Pools.end()) {
+            return *static_cast<ComponentArray<T>*>(it->second.get());
+        }
+        auto pool = std::make_unique<ComponentArray<T>>();
+        auto& ref = *pool;
+        m_Pools[typeIdx] = std::move(pool);
+        return ref;
     }
 
     Entity m_NextEntity = 1;
     std::vector<Entity> m_Entities;
-    std::unordered_map<std::type_index, ComponentPool> m_Pools;
+    std::unordered_map<std::type_index, Scope<IComponentPool>> m_Pools;
     std::vector<Scope<System>> m_Systems;
 };
 
@@ -279,15 +357,13 @@ private:
 class MovementSystem : public System {
 public:
     void Update(ECSWorld& world, f32 dt) override {
-        for (auto e : world.GetEntities()) {
-            auto* transform = world.GetComponent<TransformComponent>(e);
-            auto* velocity = world.GetComponent<VelocityComponent>(e);
-            if (transform && velocity) {
-                transform->X += velocity->VX * dt;
-                transform->Y += velocity->VY * dt;
-                transform->Z += velocity->VZ * dt;
-            }
-        }
+        world.ForEach<VelocityComponent>([&](Entity e, VelocityComponent& vel) {
+            auto* tr = world.GetComponent<TransformComponent>(e);
+            if (!tr) return;
+            tr->X += vel.VX * dt;
+            tr->Y += vel.VY * dt;
+            tr->Z += vel.VZ * dt;
+        });
     }
     const char* GetName() const override { return "MovementSystem"; }
 };
@@ -302,13 +378,10 @@ class LifetimeSystem : public System {
 public:
     void Update(ECSWorld& world, f32 dt) override {
         m_ToDestroy.clear(); // clear 保留容量，不重新分配
-        for (auto e : world.GetEntities()) {
-            auto* lc = world.GetComponent<LifetimeComponent>(e);
-            if (lc) {
-                lc->TimeRemaining -= dt;
-                if (lc->TimeRemaining <= 0) m_ToDestroy.push_back(e);
-            }
-        }
+        world.ForEach<LifetimeComponent>([&](Entity e, LifetimeComponent& lc) {
+            lc.TimeRemaining -= dt;
+            if (lc.TimeRemaining <= 0) m_ToDestroy.push_back(e);
+        });
         for (auto e : m_ToDestroy) {
             world.DestroyEntity(e);
         }
