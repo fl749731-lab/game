@@ -1,4 +1,5 @@
 #include "engine/renderer/scene_renderer.h"
+#include "engine/renderer/batch_renderer.h"
 #include "engine/renderer/shaders.h"
 #include "engine/renderer/renderer.h"
 #include "engine/renderer/post_process.h"
@@ -47,6 +48,7 @@ namespace Engine {
 
 Scope<Framebuffer> SceneRenderer::s_HDR_FBO = nullptr;
 Ref<Shader> SceneRenderer::s_GBufferShader  = nullptr;
+Ref<Shader> SceneRenderer::s_GBufInstancedShader = nullptr;
 Ref<Shader> SceneRenderer::s_DeferredShader = nullptr;
 Ref<Shader> SceneRenderer::s_EmissiveShader = nullptr;
 Ref<Shader> SceneRenderer::s_GBufDebugShader = nullptr;
@@ -90,6 +92,11 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
         Shaders::LitVertex, Shaders::LitFragment);
     s_BlitShader = ResourceManager::LoadShader("blit",
         Shaders::BlitTextureVertex, Shaders::BlitTextureFragment);
+    s_GBufInstancedShader = ResourceManager::LoadShader("gbuffer_instanced",
+        Shaders::GBufferInstancedVertex, Shaders::GBufferInstancedFragment);
+
+    // 批处理渲染器
+    BatchRenderer::Init(10000);
 
     // 基础网格
     if (!ResourceManager::GetMesh("cube"))
@@ -158,11 +165,13 @@ void SceneRenderer::Shutdown() {
     s_HDR_FBO.reset();
     GBuffer::Shutdown();
     s_GBufferShader.reset();
+    s_GBufInstancedShader.reset();
     s_DeferredShader.reset();
     s_EmissiveShader.reset();
     s_GBufDebugShader.reset();
     s_LitShader.reset();
     s_BlitShader.reset();
+    BatchRenderer::Shutdown();
     Bloom::Shutdown();
     ShadowMap::Shutdown();
     SSAO::Shutdown();
@@ -412,12 +421,18 @@ void SceneRenderer::RenderEntitiesDeferred(Scene& scene, PerspectiveCamera& came
     auto& world = scene.GetWorld();
     float t = Time::Elapsed();
 
-    s_GBufferShader->Bind();
-    s_GBufferShader->SetMat4("uVP", glm::value_ptr(camera.GetViewProjectionMatrix()));
-
     // 视锥体剔除准备
     Frustum frustum;
     frustum.ExtractFromVP(camera.GetViewProjectionMatrix());
+
+    // ── 批处理路径 (实例化 G-Buffer Shader) ─────────────────
+    BatchRenderer::ResetStats();
+    BatchRenderer::Begin(s_GBufInstancedShader.get());
+    s_GBufInstancedShader->Bind();
+    s_GBufInstancedShader->SetMat4("uVP", glm::value_ptr(camera.GetViewProjectionMatrix()));
+
+    // 收集需要走旧路径的特殊实体
+    std::vector<Entity> specialEntities;
 
     for (auto e : world.GetEntities()) {
         auto* tr = world.GetComponent<TransformComponent>(e);
@@ -434,76 +449,130 @@ void SceneRenderer::RenderEntitiesDeferred(Scene& scene, PerspectiveCamera& came
                 continue;
         }
 
-        // Model 矩阵（使用 TransformSystem 预计算的世界矩阵）
-        glm::mat4 model = tr->WorldMatrix;
-
-        // 旋转动画（通用 RotationAnimComponent 驱动）
+        // 有 RotationAnim 的实体走旧路径 (需要 CPU 端动态矩阵)
         auto* rotAnim = world.GetComponent<RotationAnimComponent>(e);
         if (rotAnim) {
-            glm::vec3 wp = tr->GetWorldPosition();
-            model = glm::translate(glm::mat4(1.0f), wp);
-            if (rotAnim->SpeedY != 0.0f)
-                model = glm::rotate(model, t * rotAnim->SpeedY, {0, 1, 0});
-            if (rotAnim->SpeedX != 0.0f)
-                model = glm::rotate(model, t * rotAnim->SpeedX, {1, 0, 0});
-            if (rotAnim->SpeedZ != 0.0f)
-                model = glm::rotate(model, t * rotAnim->SpeedZ, {0, 0, 1});
+            specialEntities.push_back(e);
+            continue;
         }
 
-        s_GBufferShader->SetMat4("uModel", glm::value_ptr(model));
-        glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(model)));
-        s_GBufferShader->SetMat3("uNormalMat", glm::value_ptr(normalMat));
+        // 构建实例数据
+        BatchInstanceData inst;
+        inst.Model = tr->WorldMatrix;
 
-        // 材质 (PBR)
         auto* mat = world.GetComponent<MaterialComponent>(e);
         if (mat) {
-            s_GBufferShader->SetVec3("uAlbedo", mat->DiffuseR, mat->DiffuseG, mat->DiffuseB);
-            s_GBufferShader->SetFloat("uMetallic", mat->Metallic);
-            s_GBufferShader->SetFloat("uRoughness", mat->Roughness);
-
-            if (!mat->TextureName.empty()) {
-                s_GBufferShader->SetInt("uUseTex", 1);
-                auto tex = ResourceManager::GetTexture(mat->TextureName);
-                if (tex) { tex->Bind(0); s_GBufferShader->SetInt("uTex", 0); }
-            } else {
-                s_GBufferShader->SetInt("uUseTex", 0);
-            }
-
-            if (!mat->NormalMapName.empty()) {
-                s_GBufferShader->SetInt("uUseNormalMap", 1);
-                auto nmap = ResourceManager::GetTexture(mat->NormalMapName);
-                if (nmap) { nmap->Bind(2); s_GBufferShader->SetInt("uNormalMap", 2); }
-            } else {
-                s_GBufferShader->SetInt("uUseNormalMap", 0);
-            }
-
-            if (mat->Emissive) {
-                s_GBufferShader->SetInt("uIsEmissive", 1);
-                s_GBufferShader->SetVec3("uEmissiveColor", mat->EmissiveR, mat->EmissiveG, mat->EmissiveB);
-                s_GBufferShader->SetFloat("uEmissiveIntensity", mat->EmissiveIntensity);
-            } else {
-                s_GBufferShader->SetInt("uIsEmissive", 0);
-            }
+            inst.Albedo = {mat->DiffuseR, mat->DiffuseG, mat->DiffuseB, mat->Metallic};
+            inst.EmissiveInfo = {mat->EmissiveR, mat->EmissiveG, mat->EmissiveB, mat->EmissiveIntensity};
+            inst.MaterialParams = {
+                mat->Roughness,
+                mat->TextureName.empty() ? 0.0f : 1.0f,
+                mat->NormalMapName.empty() ? 0.0f : 1.0f,
+                mat->Emissive ? 1.0f : 0.0f
+            };
+            BatchRenderer::Submit(rc->MeshType, mat->TextureName, mat->NormalMapName, inst);
         } else {
-            // 旧兼容路径 → 默认 PBR 参数
-            s_GBufferShader->SetVec3("uAlbedo", rc->ColorR, rc->ColorG, rc->ColorB);
-            s_GBufferShader->SetFloat("uMetallic", 0.0f);   // 非金属
-            s_GBufferShader->SetFloat("uRoughness", 0.5f);  // 中等粗糙
-            s_GBufferShader->SetInt("uUseNormalMap", 0);
-            s_GBufferShader->SetInt("uIsEmissive", 0);
-
-            if (rc->MeshType == "plane") {
-                s_GBufferShader->SetInt("uUseTex", 1);
-                glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D, s_CheckerTexID);
-                s_GBufferShader->SetInt("uTex", 0);
-            } else {
-                s_GBufferShader->SetInt("uUseTex", 0);
-            }
+            // 旧兼容路径 → 默认材质
+            inst.Albedo = {rc->ColorR, rc->ColorG, rc->ColorB, 0.0f};
+            inst.EmissiveInfo = {0, 0, 0, 0};
+            std::string texName = (rc->MeshType == "plane") ? "__checker" : "";
+            inst.MaterialParams = {
+                0.5f,
+                (rc->MeshType == "plane") ? 1.0f : 0.0f,
+                0.0f,
+                0.0f
+            };
+            BatchRenderer::Submit(rc->MeshType, texName, "", inst);
         }
+    }
 
-        auto* mesh = ResourceManager::GetMesh(rc->MeshType);
-        if (mesh) mesh->Draw();
+    // 绑定棋盘纹理到 "__checker" 特殊命名的纹理
+    // (BatchRenderer 会给 plane 实体绑真实纹理，这里预绑棋盘)
+    if (!ResourceManager::GetTexture("__checker")) {
+        // 临时方案：直接用 GL 绑定
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, s_CheckerTexID);
+    }
+
+    BatchRenderer::End();
+
+    // ── 特殊实体: 旧路径 (逐实体 DrawCall) ──────────────────
+    if (!specialEntities.empty()) {
+        s_GBufferShader->Bind();
+        s_GBufferShader->SetMat4("uVP", glm::value_ptr(camera.GetViewProjectionMatrix()));
+
+        for (auto e : specialEntities) {
+            auto* tr = world.GetComponent<TransformComponent>(e);
+            auto* rc = world.GetComponent<RenderComponent>(e);
+            if (!tr || !rc) continue;
+
+            glm::mat4 model = tr->WorldMatrix;
+
+            auto* rotAnim = world.GetComponent<RotationAnimComponent>(e);
+            if (rotAnim) {
+                glm::vec3 wp = tr->GetWorldPosition();
+                model = glm::translate(glm::mat4(1.0f), wp);
+                if (rotAnim->SpeedY != 0.0f)
+                    model = glm::rotate(model, t * rotAnim->SpeedY, {0, 1, 0});
+                if (rotAnim->SpeedX != 0.0f)
+                    model = glm::rotate(model, t * rotAnim->SpeedX, {1, 0, 0});
+                if (rotAnim->SpeedZ != 0.0f)
+                    model = glm::rotate(model, t * rotAnim->SpeedZ, {0, 0, 1});
+            }
+
+            s_GBufferShader->SetMat4("uModel", glm::value_ptr(model));
+            glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(model)));
+            s_GBufferShader->SetMat3("uNormalMat", glm::value_ptr(normalMat));
+
+            auto* mat = world.GetComponent<MaterialComponent>(e);
+            if (mat) {
+                s_GBufferShader->SetVec3("uAlbedo", mat->DiffuseR, mat->DiffuseG, mat->DiffuseB);
+                s_GBufferShader->SetFloat("uMetallic", mat->Metallic);
+                s_GBufferShader->SetFloat("uRoughness", mat->Roughness);
+
+                if (!mat->TextureName.empty()) {
+                    s_GBufferShader->SetInt("uUseTex", 1);
+                    auto tex = ResourceManager::GetTexture(mat->TextureName);
+                    if (tex) { tex->Bind(0); s_GBufferShader->SetInt("uTex", 0); }
+                } else {
+                    s_GBufferShader->SetInt("uUseTex", 0);
+                }
+
+                if (!mat->NormalMapName.empty()) {
+                    s_GBufferShader->SetInt("uUseNormalMap", 1);
+                    auto nmap = ResourceManager::GetTexture(mat->NormalMapName);
+                    if (nmap) { nmap->Bind(2); s_GBufferShader->SetInt("uNormalMap", 2); }
+                } else {
+                    s_GBufferShader->SetInt("uUseNormalMap", 0);
+                }
+
+                if (mat->Emissive) {
+                    s_GBufferShader->SetInt("uIsEmissive", 1);
+                    s_GBufferShader->SetVec3("uEmissiveColor", mat->EmissiveR, mat->EmissiveG, mat->EmissiveB);
+                    s_GBufferShader->SetFloat("uEmissiveIntensity", mat->EmissiveIntensity);
+                } else {
+                    s_GBufferShader->SetInt("uIsEmissive", 0);
+                }
+            } else {
+                s_GBufferShader->SetVec3("uAlbedo", rc->ColorR, rc->ColorG, rc->ColorB);
+                s_GBufferShader->SetFloat("uMetallic", 0.0f);
+                s_GBufferShader->SetFloat("uRoughness", 0.5f);
+                s_GBufferShader->SetInt("uUseNormalMap", 0);
+                s_GBufferShader->SetInt("uIsEmissive", 0);
+
+                if (rc->MeshType == "plane") {
+                    s_GBufferShader->SetInt("uUseTex", 1);
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D, s_CheckerTexID);
+                    s_GBufferShader->SetInt("uTex", 0);
+                } else {
+                    s_GBufferShader->SetInt("uUseTex", 0);
+                }
+            }
+
+            auto* mesh = ResourceManager::GetMesh(rc->MeshType);
+            if (mesh) mesh->Draw();
+        }
     }
 }
 

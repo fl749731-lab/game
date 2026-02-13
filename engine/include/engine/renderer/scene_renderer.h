@@ -65,6 +65,7 @@ private:
 
     static Scope<Framebuffer> s_HDR_FBO;
     static Ref<Shader> s_GBufferShader;    // 几何 Pass
+    static Ref<Shader> s_GBufInstancedShader; // 几何 Pass (实例化批处理)
     static Ref<Shader> s_DeferredShader;   // 光照 Pass
     static Ref<Shader> s_EmissiveShader;   // 前向叠加
     static Ref<Shader> s_GBufDebugShader;  // 调试可视化

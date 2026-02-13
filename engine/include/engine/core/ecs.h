@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/types.h"
+#include "engine/core/job_system.h"
 #include <vector>
 #include <unordered_map>
 #include <typeindex>
@@ -281,6 +282,42 @@ public:
         }
     }
 
+    /// 遍历同时拥有 T1 和 T2 两个组件的实体
+    /// 以较小的组件池为驱动端，减少无效查找
+    template<typename T1, typename T2, typename Func>
+    void ForEach2(Func&& fn) {
+        auto& pool1 = GetPool<T1>();
+        auto& pool2 = GetPool<T2>();
+
+        // 选择较小的池作为驱动端
+        if (pool1.Size() <= pool2.Size()) {
+            u32 count = pool1.Size();
+            for (u32 i = 0; i < count; i++) {
+                Entity e = pool1.GetEntity(i);
+                T2* c2 = pool2.Get(e);
+                if (c2) fn(e, pool1.Data(i), *c2);
+            }
+        } else {
+            u32 count = pool2.Size();
+            for (u32 i = 0; i < count; i++) {
+                Entity e = pool2.GetEntity(i);
+                T1* c1 = pool1.Get(e);
+                if (c1) fn(e, *c1, pool2.Data(i));
+            }
+        }
+    }
+
+    /// 并行遍历所有拥有指定组件的实体（多线程分块）
+    /// 注意: fn 内部不可创建/销毁实体、不可添加/删除组件
+    template<typename T, typename Func>
+    void ParallelForEach(Func&& fn) {
+        auto& pool = GetPool<T>();
+        u32 count = pool.Size();
+        JobSystem::ParallelFor(0u, count, [&](u32 i) {
+            fn(pool.GetEntity(i), pool.Data(i));
+        });
+    }
+
     /// 注册系统
     template<typename T, typename... Args>
     T& AddSystem(Args&&... args) {
@@ -368,16 +405,17 @@ private:
 class MovementSystem : public System {
 public:
     void Update(ECSWorld& world, f32 dt) override {
+        // 并行更新：每个实体只写自己的 Transform，线程安全
         auto& pool = world.GetComponentArray<VelocityComponent>();
         u32 count = pool.Size();
-        for (u32 i = 0; i < count; i++) {
+        JobSystem::ParallelFor(0u, count, [&](u32 i) {
             VelocityComponent& vel = pool.Data(i);
             auto* tr = world.GetComponent<TransformComponent>(pool.GetEntity(i));
-            if (!tr) continue;
+            if (!tr) return;
             tr->X += vel.VX * dt;
             tr->Y += vel.VY * dt;
             tr->Z += vel.VZ * dt;
-        }
+        });
     }
     const char* GetName() const override { return "MovementSystem"; }
 };
