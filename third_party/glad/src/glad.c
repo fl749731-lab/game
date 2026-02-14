@@ -86,6 +86,14 @@ PFNGLSCISSORPROC                glad_glScissor = 0;
 PFNGLBLENDFUNCSEPARATEPROC     glad_glBlendFuncSeparate = 0;
 PFNGLBLENDEQUATIONPROC         glad_glBlendEquation = 0;
 
+PFNGLGENRENDERBUFFERSPROC       glad_glGenRenderbuffers = 0;
+PFNGLDELETERENDERBUFFERSPROC    glad_glDeleteRenderbuffers = 0;
+PFNGLBINDRENDERBUFFERPROC       glad_glBindRenderbuffer = 0;
+PFNGLRENDERBUFFERSTORAGEPROC    glad_glRenderbufferStorage = 0;
+PFNGLFRAMEBUFFERRENDERBUFFERPROC glad_glFramebufferRenderbuffer = 0;
+
+PFNGLVERTEXATTRIBIPOINTERPROC   glad_glVertexAttribIPointer = 0;
+
 PFNGLDEBUGMESSAGECALLBACKPROC   glad_glDebugMessageCallback = 0;
 
 /* ── 加载实现 ──────────────────────────────────────────────── */
@@ -178,6 +186,14 @@ int gladLoadGL(GLADloadproc load) {
     GLAD_LOAD(glad_glCheckFramebufferStatus,"glCheckFramebufferStatus");
     GLAD_LOAD(glad_glDrawBuffers,            "glDrawBuffers");
     GLAD_LOAD(glad_glTexSubImage2D,          "glTexSubImage2D");
+
+    GLAD_LOAD(glad_glGenRenderbuffers,       "glGenRenderbuffers");
+    GLAD_LOAD(glad_glDeleteRenderbuffers,    "glDeleteRenderbuffers");
+    GLAD_LOAD(glad_glBindRenderbuffer,       "glBindRenderbuffer");
+    GLAD_LOAD(glad_glRenderbufferStorage,    "glRenderbufferStorage");
+    GLAD_LOAD(glad_glFramebufferRenderbuffer,"glFramebufferRenderbuffer");
+
+    GLAD_LOAD(glad_glVertexAttribIPointer,   "glVertexAttribIPointer");
 
     GLAD_LOAD(glad_glDebugMessageCallback,  "glDebugMessageCallback");
 

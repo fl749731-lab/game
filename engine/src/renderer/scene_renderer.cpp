@@ -10,6 +10,7 @@
 #include "engine/renderer/particle.h"
 #include "engine/renderer/texture.h"
 #include "engine/renderer/cascaded_shadow_map.h"
+#include "engine/renderer/volumetric.h"
 #include "engine/renderer/frustum.h"
 #include "engine/renderer/g_buffer.h"
 #include "engine/renderer/screen_quad.h"
@@ -155,6 +156,7 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
     PostProcess::SetExposure(s_Exposure);
     Bloom::Init(config.Width, config.Height);
     CascadedShadowMap::Init();
+    VolumetricLighting::Init(config.Width, config.Height);
     SSAO::Init(config.Width, config.Height);
     SSR::Init(config.Width, config.Height);
 
@@ -175,6 +177,7 @@ void SceneRenderer::Shutdown() {
     BatchRenderer::Shutdown();
     Bloom::Shutdown();
     CascadedShadowMap::Shutdown();
+    VolumetricLighting::Shutdown();
     SSAO::Shutdown();
     SSR::Shutdown();
     PostProcess::Shutdown();
@@ -187,6 +190,7 @@ void SceneRenderer::Resize(u32 width, u32 height) {
     if (s_HDR_FBO) s_HDR_FBO->Resize(width, height);
     GBuffer::Resize(width, height);
     Bloom::Resize(width, height);
+    VolumetricLighting::Resize(width, height);
     SSAO::Resize(width, height);
     SSR::Resize(width, height);
 }
@@ -248,6 +252,29 @@ void SceneRenderer::RenderScene(Scene& scene, PerspectiveCamera& camera) {
 
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
+    }
+
+    // 体积光 Pass (在 SSR 之后、Forward 之前)
+    if (VolumetricLighting::IsEnabled()) {
+        auto& dirLight = scene.GetDirLight();
+        glm::mat4 viewM = camera.GetViewMatrix();
+        glm::mat4 projM = camera.GetProjectionMatrix();
+        glm::mat4 invVP = glm::inverse(projM * viewM);
+
+        VolumetricLighting::Generate(
+            glm::value_ptr(viewM),
+            glm::value_ptr(projM),
+            glm::value_ptr(invVP),
+            dirLight.Direction,
+            dirLight.Color,
+            GBuffer::GetDepthTexture());
+
+        // 合成到 HDR FBO
+        s_HDR_FBO->Bind();
+        Renderer::SetViewport(0, 0, s_Width, s_Height);
+        glDisable(GL_DEPTH_TEST);
+        VolumetricLighting::Composite(s_HDR_FBO->GetColorAttachmentID(0));
+        glEnable(GL_DEPTH_TEST);
     }
 
     ForwardPass(scene, camera);

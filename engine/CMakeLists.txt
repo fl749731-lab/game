@@ -22,6 +22,38 @@ else()
     message(STATUS "Python AI layer disabled (use -DENGINE_ENABLE_PYTHON=ON to enable)")
 endif()
 
+# Vulkan (可选，默认关闭)
+option(ENGINE_ENABLE_VULKAN "启用 Vulkan 渲染后端" OFF)
+
+if(ENGINE_ENABLE_VULKAN)
+    find_package(Vulkan QUIET)
+    if(Vulkan_FOUND)
+        message(STATUS "Found Vulkan: ${Vulkan_INCLUDE_DIRS}")
+        target_compile_definitions(Engine PUBLIC ENGINE_ENABLE_VULKAN)
+        target_include_directories(Engine PRIVATE ${Vulkan_INCLUDE_DIRS})
+    else()
+        message(WARNING "Vulkan SDK not found, Vulkan backend disabled")
+    endif()
+else()
+    message(STATUS "Vulkan backend disabled (use -DENGINE_ENABLE_VULKAN=ON to enable)")
+endif()
+
+# Java/JNI (可选，默认关闭)
+option(ENGINE_ENABLE_JAVA "启用 Java 数据层 (JNI)" OFF)
+
+if(ENGINE_ENABLE_JAVA)
+    find_package(JNI QUIET)
+    if(JNI_FOUND)
+        message(STATUS "Found JNI: ${JNI_INCLUDE_DIRS}")
+        target_compile_definitions(Engine PUBLIC ENGINE_ENABLE_JAVA)
+        target_include_directories(Engine PRIVATE ${JNI_INCLUDE_DIRS})
+    else()
+        message(WARNING "JNI not found, Java data layer disabled")
+    endif()
+else()
+    message(STATUS "Java data layer disabled (use -DENGINE_ENABLE_JAVA=ON to enable)")
+endif()
+
 target_include_directories(Engine
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -56,6 +88,8 @@ target_link_libraries(Engine
     PRIVATE
         ${OPENGL_LIBS}
         $<$<BOOL:${Python3_FOUND}>:${Python3_LIBRARIES}>
+        $<$<BOOL:${Vulkan_FOUND}>:${Vulkan_LIBRARIES}>
+        $<$<BOOL:${JNI_FOUND}>:${JNI_LIBRARIES}>
 )
 
 # 预处理器宏

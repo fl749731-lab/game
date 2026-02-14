@@ -17,11 +17,13 @@
 | --- | :---: | --- |
 | 延迟渲染 | ✅ | G-Buffer MRT + 全屏延迟光照 Pass |
 | PBR 材质 | ✅ | Cook-Torrance GGX BRDF (Metallic/Roughness) |
+| IBL 环境光照 | ✅ | HDR→Cubemap + 辐照度图 + 预滤波环境图 + BRDF LUT |
 | SSAO | ✅ | 32 采样半球核 + 4×4 噪声旋转 + 模糊 |
 | SSR | ✅ | 视图空间 Ray Marching 64 步 + HDR 采样 |
 | 实例化渲染 | ✅ | Dynamic VBO + glDrawArraysInstanced (万级实例) |
 | HDR + Bloom | ✅ | Reinhard 色调映射 + 高斯模糊泛光 |
 | 阴影映射 | ✅ | 方向光 Shadow Map + PCF 软阴影 |
+| GPU 骨骼蒙皮 | ✅ | 128 骨骼 × 4 权重，整型骨骼ID属性 |
 | 法线贴图 | ✅ | TBN 矩阵，CPU 预计算 |
 | 粒子系统 | ✅ | GPU Instancing |
 | 程序化天空盒 | ✅ | 三层渐变 + 太阳光晕 |
@@ -55,7 +57,9 @@
 | 特性 | 状态 | 说明 |
 | --- | :---: | --- |
 | ECS 架构 | ✅ | Entity-Component-System |
-| AABB 物理 | ✅ | 碰撞检测 + 射线检测 + BVH 加速 |
+| AABB / OBB 物理 | ✅ | 碰撞检测 + 射线检测 + BVH 加速 + OBB/球/胶囊 |
+| 骨骼动画系统 | ✅ | CPU 采样 + GPU 蒙皮 (Skeleton/AnimationClip/Sampler) |
+| 场景序列化 | ✅ | JSON Save/Load，16+ 组件全覆盖 |
 | 脚本逻辑层 | ✅ | ScriptSystem + EngineAPI (30+ Python 接口) |
 | Python AI | ✅ | pybind11 桥接 (巡逻/追击/防御) |
 | 层级指挥链 AI | ✅ | 指挥官→小队长→士兵 三层决策 + 玩家意图记忆 |
@@ -95,7 +99,7 @@ docs/         ← 文档与基准测试
 - **并行**: `ParallelForEach<T>()` 多线程分块遍历（基于 `JobSystem` 线程池）
 - **层级**: 父子关系 (`SetParent` / `GetRootEntities`) + `TransformSystem` 递归计算世界矩阵
 - **系统**: 继承 `System` 基类，串行更新（内置 `MovementSystem`、`LifetimeSystem`、`TransformSystem`、`ScriptSystem`）
-- **组件**: Transform、Tag、Health、Velocity、AI、Squad、Script、Render、Material、RotationAnim 等 10+ 组件
+- **组件**: Transform、Tag、Health、Velocity、AI、Squad、Script、Render、Material、RotationAnim、Collider、RigidBody、Animator 等 16+ 组件
 - **直接访问**: `RawData()` / `RawEntities()` 暴露底层数组指针，供高性能批处理使用
 
 ### 延迟渲染管线
@@ -208,6 +212,8 @@ cd build && ctest --output-on-failure
 - **实例化渲染** (Dynamic VBO + glDrawArraysInstanced, 万级实例)
 - HDR 帧缓冲 + Reinhard 色调映射 + 伽马校正
 - Bloom 后处理 (亮度提取 → 高斯模糊 → 混合)
+- **IBL 环境光照** (HDR→Cubemap + 辐照度图 + 预滤波 + BRDF LUT)
+- **GPU 骨骼蒙皮** (128 骨骼 × 4 权重 + ivec4 整型属性)
 - 阴影映射 (方向光 Shadow Map + PCF 软阴影)
 - 法线贴图 (TBN 矩阵，CPU 预计算法线矩阵)
 - 粒子系统 (GPU Instancing)
@@ -236,7 +242,8 @@ cd build && ctest --output-on-failure
 
 ### 核心系统详情
 
-- Entity-Component-System (ECS) / 场景管理器 / 场景序列化
+- Entity-Component-System (ECS) / 场景管理器 / 场景序列化 (16+ 组件 JSON 存取)
+- 骨骼动画系统 (Skeleton + AnimationClip + CPU Sampler + GPU Skinning)
 - 脚本逻辑层 (ScriptSystem + EngineAPI, 30+ Python 接口)
 - 层级指挥链 AI (Commander → Squad Leader → Soldier, 玩家意图记忆)
 - 统一资源管理 (Shader/Texture/Mesh 缓存 + 异步加载)
@@ -247,10 +254,11 @@ cd build && ctest --output-on-failure
 
 ### 物理系统详情
 
-- AABB 碰撞检测 (含穿透方向+深度)
+- AABB / OBB / Sphere / Capsule 碰撞检测 (含穿透方向+深度)
+- SAT (OBB vs OBB) + GJK (OBB vs Sphere)
 - 射线检测 (Ray vs AABB / Plane)
 - BVH 加速结构
-- 刚体组件 + 碰撞回调
+- 刚体组件 + 碰撞回调 + CCD
 
 ### 调试与分析详情
 

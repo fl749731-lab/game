@@ -147,6 +147,7 @@ enum class ColliderShape : u8 {
     Box,       // AABB
     Sphere,    // 球
     Capsule,   // 胶囊
+    OBB,       // 有向包围盒
 };
 
 // ── 射线 ────────────────────────────────────────────────────

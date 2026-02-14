@@ -1,5 +1,7 @@
 #include "engine/core/scene_serializer.h"
 #include "engine/core/log.h"
+#include "engine/physics/physics_world.h"
+#include "engine/renderer/animation.h"
 
 #include <fstream>
 #include <sstream>
@@ -363,6 +365,75 @@ bool SceneSerializer::Save(const Scene& scene, const std::string& filepath) {
             w.EndObject();
         }
 
+        // Collider
+        auto* col = world.GetComponent<ColliderComponent>(e);
+        if (col) {
+            w.Key("collider"); w.BeginObject();
+            w.KeyI32("shape", (i32)col->Shape);
+            w.KeyF32("sphereRadius", col->SphereRadius);
+            w.KeyF32("capsuleRadius", col->CapsuleRadius);
+            w.KeyF32("capsuleHeight", col->CapsuleHeight);
+            w.KeyI32("layer", (i32)col->Layer);
+            w.KeyI32("mask", (i32)col->Mask);
+            w.KeyBool("isTrigger", col->IsTrigger);
+            w.KeyBool("useCCD", col->UseCCD);
+            w.EndObject();
+        }
+
+        // RigidBody
+        auto* rb = world.GetComponent<RigidBodyComponent>(e);
+        if (rb) {
+            w.Key("rigidBody"); w.BeginObject();
+            w.KeyF32("mass", rb->Mass);
+            w.KeyF32("restitution", rb->Restitution);
+            w.KeyF32("friction", rb->Friction);
+            w.KeyF32("linearDamping", rb->LinearDamping);
+            w.KeyF32("angularDamping", rb->AngularDamping);
+            w.KeyBool("isStatic", rb->IsStatic);
+            w.KeyBool("useGravity", rb->UseGravity);
+            w.KeyBool("canSleep", rb->CanSleep);
+            w.EndObject();
+        }
+
+        // Script
+        auto* sc = world.GetComponent<ScriptComponent>(e);
+        if (sc) {
+            w.Key("script"); w.BeginObject();
+            w.KeyStr("module", sc->ScriptModule);
+            w.KeyBool("enabled", sc->Enabled);
+            w.EndObject();
+        }
+
+        // Squad
+        auto* sq = world.GetComponent<SquadComponent>(e);
+        if (sq) {
+            w.Key("squad"); w.BeginObject();
+            w.KeyI32("squadID", (i32)sq->SquadID);
+            w.KeyStr("role", sq->Role);
+            w.EndObject();
+        }
+
+        // RotationAnim
+        auto* ra = world.GetComponent<RotationAnimComponent>(e);
+        if (ra) {
+            w.Key("rotationAnim"); w.BeginObject();
+            w.KeyF32("speedX", ra->SpeedX);
+            w.KeyF32("speedY", ra->SpeedY);
+            w.KeyF32("speedZ", ra->SpeedZ);
+            w.EndObject();
+        }
+
+        // Animator
+        auto* anim = world.GetComponent<AnimatorComponent>(e);
+        if (anim) {
+            w.Key("animator"); w.BeginObject();
+            w.KeyStr("currentClip", anim->CurrentClip);
+            w.KeyF32("playbackSpeed", anim->PlaybackSpeed);
+            w.KeyBool("loop", anim->Loop);
+            w.KeyBool("playing", anim->Playing);
+            w.EndObject();
+        }
+
         w.EndObject();
     }
     w.EndArray();
@@ -593,6 +664,69 @@ Ref<Scene> SceneSerializer::Load(const std::string& filepath) {
                         auto& lt = world.AddComponent<LifetimeComponent>(entity);
                         ReadObjectFields(p, [&](const std::string& lk) {
                             if (lk == "timeRemaining") lt.TimeRemaining = (f32)p.ExpectNum();
+                            else SkipValue(p);
+                        });
+                    }
+                    else if (k == "collider") {
+                        auto& col = world.AddComponent<ColliderComponent>(entity);
+                        ReadObjectFields(p, [&](const std::string& ck) {
+                            if (ck == "shape") col.Shape = (ColliderShape)(i32)p.ExpectNum();
+                            else if (ck == "sphereRadius") col.SphereRadius = (f32)p.ExpectNum();
+                            else if (ck == "capsuleRadius") col.CapsuleRadius = (f32)p.ExpectNum();
+                            else if (ck == "capsuleHeight") col.CapsuleHeight = (f32)p.ExpectNum();
+                            else if (ck == "layer") col.Layer = (u16)p.ExpectNum();
+                            else if (ck == "mask") col.Mask = (u16)p.ExpectNum();
+                            else if (ck == "isTrigger") col.IsTrigger = p.ExpectBool();
+                            else if (ck == "useCCD") col.UseCCD = p.ExpectBool();
+                            else SkipValue(p);
+                        });
+                    }
+                    else if (k == "rigidBody") {
+                        auto& rb = world.AddComponent<RigidBodyComponent>(entity);
+                        ReadObjectFields(p, [&](const std::string& rk) {
+                            if (rk == "mass") rb.Mass = (f32)p.ExpectNum();
+                            else if (rk == "restitution") rb.Restitution = (f32)p.ExpectNum();
+                            else if (rk == "friction") rb.Friction = (f32)p.ExpectNum();
+                            else if (rk == "linearDamping") rb.LinearDamping = (f32)p.ExpectNum();
+                            else if (rk == "angularDamping") rb.AngularDamping = (f32)p.ExpectNum();
+                            else if (rk == "isStatic") rb.IsStatic = p.ExpectBool();
+                            else if (rk == "useGravity") rb.UseGravity = p.ExpectBool();
+                            else if (rk == "canSleep") rb.CanSleep = p.ExpectBool();
+                            else SkipValue(p);
+                        });
+                    }
+                    else if (k == "script") {
+                        auto& sc = world.AddComponent<ScriptComponent>(entity);
+                        ReadObjectFields(p, [&](const std::string& sk) {
+                            if (sk == "module") sc.ScriptModule = p.ExpectStr();
+                            else if (sk == "enabled") sc.Enabled = p.ExpectBool();
+                            else SkipValue(p);
+                        });
+                    }
+                    else if (k == "squad") {
+                        auto& sq = world.AddComponent<SquadComponent>(entity);
+                        ReadObjectFields(p, [&](const std::string& qk) {
+                            if (qk == "squadID") sq.SquadID = (u32)p.ExpectNum();
+                            else if (qk == "role") sq.Role = p.ExpectStr();
+                            else SkipValue(p);
+                        });
+                    }
+                    else if (k == "rotationAnim") {
+                        auto& ra = world.AddComponent<RotationAnimComponent>(entity);
+                        ReadObjectFields(p, [&](const std::string& rk) {
+                            if (rk == "speedX") ra.SpeedX = (f32)p.ExpectNum();
+                            else if (rk == "speedY") ra.SpeedY = (f32)p.ExpectNum();
+                            else if (rk == "speedZ") ra.SpeedZ = (f32)p.ExpectNum();
+                            else SkipValue(p);
+                        });
+                    }
+                    else if (k == "animator") {
+                        auto& anim = world.AddComponent<AnimatorComponent>(entity);
+                        ReadObjectFields(p, [&](const std::string& ak) {
+                            if (ak == "currentClip") anim.CurrentClip = p.ExpectStr();
+                            else if (ak == "playbackSpeed") anim.PlaybackSpeed = (f32)p.ExpectNum();
+                            else if (ak == "loop") anim.Loop = p.ExpectBool();
+                            else if (ak == "playing") anim.Playing = p.ExpectBool();
                             else SkipValue(p);
                         });
                     }

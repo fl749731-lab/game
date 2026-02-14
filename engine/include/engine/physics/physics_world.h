@@ -3,8 +3,10 @@
 #include "engine/core/types.h"
 #include "engine/core/ecs.h"
 #include "engine/physics/collision.h"
+#include "engine/physics/obb.h"
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <vector>
 #include <functional>
 #include <unordered_set>
@@ -89,6 +91,15 @@ struct ColliderComponent : public Component {
         glm::vec3 center = {tr.X, tr.Y, tr.Z};
         return {center + glm::vec3(0, -halfH, 0),
                 center + glm::vec3(0,  halfH, 0), r};
+    }
+
+    /// 获取世界空间 OBB
+    OBB GetWorldOBB(const TransformComponent& tr) const {
+        glm::vec3 pos = {tr.X, tr.Y, tr.Z};
+        glm::vec3 scale = {tr.ScaleX, tr.ScaleY, tr.ScaleZ};
+        glm::vec3 euler = glm::radians(glm::vec3(tr.RotX, tr.RotY, tr.RotZ));
+        glm::quat rotation(euler);
+        return OBB::FromTransform(pos, scale, rotation);
     }
 
 private:

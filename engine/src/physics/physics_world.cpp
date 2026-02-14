@@ -228,6 +228,73 @@ bool PhysicsWorld::TestSingleShape(ColliderShape shapeA, const ColliderComponent
         return hit;
     }
 
+    // OBB vs OBB (使用 SAT 快速检测)
+    if (shapeA == ColliderShape::OBB && shapeB == ColliderShape::OBB) {
+        OBB a = colA.GetWorldOBB(trAOff);
+        OBB b = colB.GetWorldOBB(trBOff);
+        return SAT::TestOBB(a, b, outNormal, outPenetration);
+    }
+
+    // OBB vs Box (OBB vs AABB，AABB 转 OBB 处理)
+    if (shapeA == ColliderShape::OBB && shapeB == ColliderShape::Box) {
+        OBB a = colA.GetWorldOBB(trAOff);
+        AABB bAABB = colB.GetWorldAABB(trBOff);
+        OBB b;
+        b.Center = bAABB.Center();
+        b.HalfSize = bAABB.HalfSize();
+        b.Axes = glm::mat3(1.0f);
+        return SAT::TestOBB(a, b, outNormal, outPenetration);
+    }
+    if (shapeA == ColliderShape::Box && shapeB == ColliderShape::OBB) {
+        AABB aAABB = colA.GetWorldAABB(trAOff);
+        OBB a;
+        a.Center = aAABB.Center();
+        a.HalfSize = aAABB.HalfSize();
+        a.Axes = glm::mat3(1.0f);
+        OBB b = colB.GetWorldOBB(trBOff);
+        bool hit = SAT::TestOBB(a, b, outNormal, outPenetration);
+        return hit;
+    }
+
+    // OBB vs Sphere (GJK)
+    if (shapeA == ColliderShape::OBB && shapeB == ColliderShape::Sphere) {
+        OBB obb = colA.GetWorldOBB(trAOff);
+        Sphere sph = colB.GetWorldSphere(trBOff);
+        GJKResult r = GJK::TestOBBSphere(obb, sph);
+        if (r.Colliding) { outNormal = r.Normal; outPenetration = r.Penetration; }
+        return r.Colliding;
+    }
+    if (shapeA == ColliderShape::Sphere && shapeB == ColliderShape::OBB) {
+        Sphere sph = colA.GetWorldSphere(trAOff);
+        OBB obb = colB.GetWorldOBB(trBOff);
+        GJKResult r = GJK::TestOBBSphere(obb, sph);
+        if (r.Colliding) { outNormal = -r.Normal; outPenetration = r.Penetration; }
+        return r.Colliding;
+    }
+
+    // OBB vs Capsule (简化: OBB 最近点 → Capsule 最近点)
+    if (shapeA == ColliderShape::OBB && shapeB == ColliderShape::Capsule) {
+        OBB obb = colA.GetWorldOBB(trAOff);
+        Capsule cap = colB.GetWorldCapsule(trBOff);
+        // 简化处理：胶囊中心球与 OBB 检测
+        Sphere sph;
+        sph.Center = (cap.PointA + cap.PointB) * 0.5f;
+        sph.Radius = cap.Radius + glm::length(cap.PointB - cap.PointA) * 0.5f;
+        GJKResult r = GJK::TestOBBSphere(obb, sph);
+        if (r.Colliding) { outNormal = r.Normal; outPenetration = r.Penetration; }
+        return r.Colliding;
+    }
+    if (shapeA == ColliderShape::Capsule && shapeB == ColliderShape::OBB) {
+        Capsule cap = colA.GetWorldCapsule(trAOff);
+        OBB obb = colB.GetWorldOBB(trBOff);
+        Sphere sph;
+        sph.Center = (cap.PointA + cap.PointB) * 0.5f;
+        sph.Radius = cap.Radius + glm::length(cap.PointB - cap.PointA) * 0.5f;
+        GJKResult r = GJK::TestOBBSphere(obb, sph);
+        if (r.Colliding) { outNormal = -r.Normal; outPenetration = r.Penetration; }
+        return r.Colliding;
+    }
+
     // 后备
     AABB a = colA.GetWorldAABB(trAOff);
     AABB b = colB.GetWorldAABB(trBOff);

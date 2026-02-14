@@ -168,6 +168,7 @@ typedef struct __GLsync *GLsync;
 #define GL_RGB                            0x1907
 #define GL_RGBA                           0x1908
 #define GL_RED                            0x1903
+#define GL_RG                             0x8227
 #define GL_R8                             0x8229
 #define GL_RGB8                           0x8051
 #define GL_RGBA8                          0x8058
@@ -187,6 +188,17 @@ typedef struct __GLsync *GLsync;
 #define GL_COLOR_ATTACHMENT1              0x8CE1
 #define GL_CLAMP_TO_BORDER                0x812D
 #define GL_TEXTURE_BORDER_COLOR           0x1004
+
+/* Cubemap */
+#define GL_TEXTURE_CUBE_MAP               0x8513
+#define GL_TEXTURE_CUBE_MAP_POSITIVE_X    0x8515
+#define GL_TEXTURE_CUBE_MAP_NEGATIVE_X    0x8516
+#define GL_TEXTURE_CUBE_MAP_POSITIVE_Y    0x8517
+#define GL_TEXTURE_CUBE_MAP_NEGATIVE_Y    0x8518
+#define GL_TEXTURE_CUBE_MAP_POSITIVE_Z    0x8519
+#define GL_TEXTURE_CUBE_MAP_NEGATIVE_Z    0x851A
+#define GL_TEXTURE_WRAP_R                 0x8072
+#define GL_TEXTURE_MAX_LEVEL              0x813D
 
 /* Framebuffer */
 #define GL_FRAMEBUFFER                    0x8D40
@@ -311,6 +323,16 @@ typedef GLenum (APIENTRY *PFNGLCHECKFRAMEBUFFERSTATUSPROC)(GLenum);
 typedef void   (APIENTRY *PFNGLDRAWBUFFERSPROC)(GLsizei, const GLenum*);
 typedef void   (APIENTRY *PFNGLTEXSUBIMAGE2DPROC)(GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, const void*);
 
+/* Renderbuffer (GL 3.0+) */
+typedef void   (APIENTRY *PFNGLGENRENDERBUFFERSPROC)(GLsizei, GLuint*);
+typedef void   (APIENTRY *PFNGLDELETERENDERBUFFERSPROC)(GLsizei, const GLuint*);
+typedef void   (APIENTRY *PFNGLBINDRENDERBUFFERPROC)(GLenum, GLuint);
+typedef void   (APIENTRY *PFNGLRENDERBUFFERSTORAGEPROC)(GLenum, GLenum, GLsizei, GLsizei);
+typedef void   (APIENTRY *PFNGLFRAMEBUFFERRENDERBUFFERPROC)(GLenum, GLenum, GLenum, GLuint);
+
+/* Vertex attribs integer (GL 3.0+) — for bone IDs */
+typedef void   (APIENTRY *PFNGLVERTEXATTRIBIPOINTERPROC)(GLuint, GLint, GLenum, GLsizei, const void*);
+
 /* Debug (GL 4.3+) */
 typedef void   (APIENTRY *PFNGLDEBUGMESSAGECALLBACKPROC)(GLDEBUGPROC, const void*);
 
@@ -401,6 +423,14 @@ extern PFNGLCHECKFRAMEBUFFERSTATUSPROC glad_glCheckFramebufferStatus;
 extern PFNGLDRAWBUFFERSPROC            glad_glDrawBuffers;
 extern PFNGLTEXSUBIMAGE2DPROC          glad_glTexSubImage2D;
 
+extern PFNGLGENRENDERBUFFERSPROC       glad_glGenRenderbuffers;
+extern PFNGLDELETERENDERBUFFERSPROC    glad_glDeleteRenderbuffers;
+extern PFNGLBINDRENDERBUFFERPROC       glad_glBindRenderbuffer;
+extern PFNGLRENDERBUFFERSTORAGEPROC    glad_glRenderbufferStorage;
+extern PFNGLFRAMEBUFFERRENDERBUFFERPROC glad_glFramebufferRenderbuffer;
+
+extern PFNGLVERTEXATTRIBIPOINTERPROC   glad_glVertexAttribIPointer;
+
 extern PFNGLDEBUGMESSAGECALLBACKPROC   glad_glDebugMessageCallback;
 
 /* ── 用宏将 glXxx 映射到 glad_glXxx ─────────────────────── */
@@ -477,6 +507,12 @@ extern PFNGLDEBUGMESSAGECALLBACKPROC   glad_glDebugMessageCallback;
 #define glCheckFramebufferStatus glad_glCheckFramebufferStatus
 #define glDrawBuffers           glad_glDrawBuffers
 #define glTexSubImage2D         glad_glTexSubImage2D
+#define glGenRenderbuffers      glad_glGenRenderbuffers
+#define glDeleteRenderbuffers   glad_glDeleteRenderbuffers
+#define glBindRenderbuffer      glad_glBindRenderbuffer
+#define glRenderbufferStorage   glad_glRenderbufferStorage
+#define glFramebufferRenderbuffer glad_glFramebufferRenderbuffer
+#define glVertexAttribIPointer  glad_glVertexAttribIPointer
 #define glDebugMessageCallback  glad_glDebugMessageCallback
 
 /* ── 加载函数 ────────────────────────────────────────────── */
