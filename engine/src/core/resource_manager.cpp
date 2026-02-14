@@ -1,4 +1,5 @@
 #include "engine/core/resource_manager.h"
+#include "engine/core/async_loader.h"
 
 #include <fstream>
 #include <sstream>
@@ -85,6 +86,22 @@ Ref<Texture2D> ResourceManager::GetTexture(const std::string& name) {
     if (it != s_Textures.end()) return it->second;
     LOG_WARN("[资源] Texture '%s' 未找到", name.c_str());
     return nullptr;
+}
+
+void ResourceManager::CacheTexture(const std::string& name, Ref<Texture2D> tex) {
+    s_Textures[name] = tex;
+    LOG_DEBUG("[资源] Texture '%s' 已缓存 (异步)", name.c_str());
+}
+
+void ResourceManager::LoadTextureAsync(const std::string& name,
+                                        const std::string& filepath,
+                                        std::function<void(Ref<Texture2D>)> callback) {
+    AsyncLoader::LoadTextureAsync(name, filepath, std::move(callback));
+}
+
+void ResourceManager::LoadModelAsync(const std::string& filepath,
+                                      std::function<void(std::vector<std::string>)> callback) {
+    AsyncLoader::LoadModelAsync(filepath, std::move(callback));
 }
 
 // ── Mesh ────────────────────────────────────────────────────

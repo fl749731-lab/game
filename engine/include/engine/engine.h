@@ -16,6 +16,7 @@
 #include "engine/core/script_system.h"
 #include "engine/core/prefab.h"
 #include "engine/core/job_system.h"
+#include "engine/core/async_loader.h"
 
 // Platform
 #include "engine/platform/window.h"

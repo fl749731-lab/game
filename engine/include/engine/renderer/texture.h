@@ -13,6 +13,8 @@ public:
     Texture2D(const std::string& filepath);
     /// 创建空纹理（可用于程序化填充）
     Texture2D(u32 width, u32 height, const void* data = nullptr);
+    /// 从原始像素数据构建（指定通道数，用于异步加载 GPU 上传）
+    Texture2D(u32 width, u32 height, u32 channels, const void* data);
     ~Texture2D();
 
     // 禁止拷贝

@@ -90,6 +90,53 @@ Texture2D::Texture2D(u32 width, u32 height, const void* data)
     LOG_DEBUG("纹理已创建: %ux%u", m_Width, m_Height);
 }
 
+Texture2D::Texture2D(u32 width, u32 height, u32 channels, const void* data)
+    : m_Width(width), m_Height(height), m_Channels(channels)
+{
+    if (channels == 4) {
+        m_InternalFormat = GL_RGBA8;
+        m_DataFormat = GL_RGBA;
+    } else if (channels == 3) {
+        m_InternalFormat = GL_RGB8;
+        m_DataFormat = GL_RGB;
+    } else if (channels == 1) {
+        m_InternalFormat = GL_R8;
+        m_DataFormat = GL_RED;
+    } else {
+        LOG_WARN("不支持的通道数: %u", channels);
+        return;
+    }
+
+    glGenTextures(1, &m_ID);
+    glBindTexture(GL_TEXTURE_2D, m_ID);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, m_InternalFormat, m_Width, m_Height, 0,
+                 m_DataFormat, GL_UNSIGNED_BYTE, data);
+
+    if (data) {
+        glGenerateMipmap(GL_TEXTURE_2D);
+
+        // 各向异性过滤
+        #ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
+        #define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
+        #endif
+        #ifndef GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT
+        #define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
+        #endif
+        float maxAniso = 1.0f;
+        glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAniso);
+        if (maxAniso > 1.0f)
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, maxAniso);
+    }
+
+    LOG_DEBUG("纹理已创建: %ux%u (%u通道)", m_Width, m_Height, channels);
+}
+
 Texture2D::~Texture2D() {
     if (m_ID) glDeleteTextures(1, &m_ID);
 }
