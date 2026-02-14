@@ -27,7 +27,8 @@ A general-purpose 2D/3D game engine built from scratch in C/C++.
 | Procedural Skybox | ✅ | 3-layer gradient + sun halo |
 | Overdraw Visualization | ✅ | Fragment overlap counting + heatmap (black→blue→green→yellow→red→white) |
 | Vignette / Frustum Culling | ✅ | — |
-| Vulkan Backend | ✅ | Instance/Device/Swapchain/RenderPass/Pipeline/Renderer framework ready |
+| Vulkan Backend | ✅ | Full feature parity: Mipmap / PBR Materials / G-Buffer MRT / Deferred Lighting / Shadow Map (PCF) / Bloom / Post-processing (HDR+Gamma+Vignette) / SSAO / SSR / Procedural Skybox / IBL (BRDF LUT) / Compute Pipeline |
+| RHI Abstraction Layer | ✅ | Backend-agnostic interfaces: Buffer / Shader / Texture / Framebuffer / PipelineState / Device — OpenGL & Vulkan implementations |
 
 ### Editor Tools
 

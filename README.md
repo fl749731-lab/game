@@ -28,6 +28,7 @@
 | Overdraw 可视化 | ✅ | 片元叠加计数 + 热力图 (黑→蓝→绿→黄→红→白) |
 | 暗角效果 / 视锥剔除 | ✅ | — |
 | Vulkan 后端 | ✅ | 完整功能对等: Mipmap / PBR 材质 / G-Buffer MRT / 延迟光照 / Shadow Map (PCF) / Bloom / 后处理 (HDR+Gamma+晕影) / SSAO / SSR / 程序化天空盒 / IBL (BRDF LUT) / Compute Pipeline |
+| RHI 抽象层 | ✅ | 后端无关接口: Buffer / Shader / Texture / Framebuffer / PipelineState / Device — OpenGL 与 Vulkan 双实现 |
 
 ### 编辑器工具
 
