@@ -487,8 +487,9 @@ void SceneRenderer::RenderEntitiesDeferred(Scene& scene, PerspectiveCamera& came
     s_GBufInstancedShader->Bind();
     s_GBufInstancedShader->SetMat4("uVP", glm::value_ptr(camera.GetViewProjectionMatrix()));
 
-    // 收集需要走旧路径的特殊实体
-    std::vector<Entity> specialEntities;
+    // 使用 static vector 避免每帧堆分配
+    static std::vector<Entity> specialEntities;
+    specialEntities.clear();
 
     for (auto e : world.GetEntities()) {
         auto* tr = world.GetComponent<TransformComponent>(e);
