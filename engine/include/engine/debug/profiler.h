@@ -9,22 +9,23 @@
 
 namespace Engine {
 
-// ── 性能分析器 ──────────────────────────────────────────────
-// 作用域计时 + 帧级汇总 + 直方图
+// ── 性能分析器 (层级式) ────────────────────────────────────
+// 支持 Push/Pop 嵌套层级 → 火焰图数据源
 
 class Profiler {
 public:
     struct TimerResult {
         std::string Name;
         f64 DurationMs = 0;   // 毫秒
+        u32 Depth = 0;        // 嵌套深度 (0=顶层)
     };
 
     struct FrameStats {
         f64 TotalFrameMs = 0;
-        std::vector<TimerResult> Timers;
+        std::vector<TimerResult> Timers;  // 按结束顺序排列，含嵌套深度
     };
 
-    /// 开始计时（返回计时器 ID）
+    /// 开始计时
     static void BeginTimer(const std::string& name);
 
     /// 结束计时
@@ -52,14 +53,18 @@ private:
 
     struct ActiveTimer {
         TimePoint Start;
+        std::string Name;
+        u32 Depth = 0;
     };
 
-    static std::unordered_map<std::string, ActiveTimer> s_ActiveTimers;
+    // 层级栈 (Push/Pop)
+    static std::vector<ActiveTimer> s_TimerStack;
+
     static FrameStats s_CurrentFrame;
     static FrameStats s_LastFrame;
     static std::unordered_map<std::string, std::vector<f64>> s_History;
     static bool s_Enabled;
-    static constexpr u32 HISTORY_SIZE = 120;
+    static constexpr u32 HISTORY_SIZE = 240;
 };
 
 // ── 作用域计时器宏 ──────────────────────────────────────────

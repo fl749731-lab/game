@@ -6,37 +6,52 @@
 
 namespace Engine {
 
-std::unordered_map<std::string, Profiler::ActiveTimer> Profiler::s_ActiveTimers;
+std::vector<Profiler::ActiveTimer> Profiler::s_TimerStack;
 Profiler::FrameStats Profiler::s_CurrentFrame;
 Profiler::FrameStats Profiler::s_LastFrame;
 std::unordered_map<std::string, std::vector<f64>> Profiler::s_History;
-static std::unordered_map<std::string, u32> s_HistoryIndex;  // 循环缓冲区写入位置
+static std::unordered_map<std::string, u32> s_HistoryIndex;
 bool Profiler::s_Enabled = true;
 
 void Profiler::BeginTimer(const std::string& name) {
     if (!s_Enabled) return;
-    s_ActiveTimers[name] = { Clock::now() };
+    ActiveTimer timer;
+    timer.Start = Clock::now();
+    timer.Name = name;
+    timer.Depth = (u32)s_TimerStack.size();
+    s_TimerStack.push_back(timer);
 }
 
 void Profiler::EndTimer(const std::string& name) {
     if (!s_Enabled) return;
-    auto it = s_ActiveTimers.find(name);
-    if (it == s_ActiveTimers.end()) return;
 
-    auto end = Clock::now();
-    f64 ms = std::chrono::duration<f64, std::milli>(end - it->second.Start).count();
-    s_CurrentFrame.Timers.push_back({name, ms});
-    s_ActiveTimers.erase(it);
+    // 从栈顶向下查找匹配的计时器
+    for (int i = (int)s_TimerStack.size() - 1; i >= 0; i--) {
+        if (s_TimerStack[i].Name == name) {
+            auto end = Clock::now();
+            f64 ms = std::chrono::duration<f64, std::milli>(end - s_TimerStack[i].Start).count();
+
+            TimerResult result;
+            result.Name = name;
+            result.DurationMs = ms;
+            result.Depth = s_TimerStack[i].Depth;
+            s_CurrentFrame.Timers.push_back(result);
+
+            s_TimerStack.erase(s_TimerStack.begin() + i);
+            break;
+        }
+    }
 }
 
 void Profiler::EndFrame() {
     if (!s_Enabled) return;
 
-    // 计算帧总时间
+    // 帧总时间 = 顶层计时器之和
     f64 total = 0;
     for (auto& t : s_CurrentFrame.Timers) {
-        total += t.DurationMs;
-        // 存入历史（循环缓冲区，避免 O(N) 头部删除）
+        if (t.Depth == 0) total += t.DurationMs;
+
+        // 存入历史（环形缓冲区）
         auto& hist = s_History[t.Name];
         auto& idx = s_HistoryIndex[t.Name];
         if (hist.size() < HISTORY_SIZE) {
@@ -50,6 +65,7 @@ void Profiler::EndFrame() {
 
     s_LastFrame = s_CurrentFrame;
     s_CurrentFrame.Timers.clear();
+    s_TimerStack.clear();  // 防止跨帧泄漏
 }
 
 const Profiler::FrameStats& Profiler::GetLastFrameStats() {
@@ -65,11 +81,9 @@ f64 Profiler::GetAverageMs(const std::string& name, u32 frames) {
     f64 sum = 0;
 
     if (hist.size() < HISTORY_SIZE) {
-        // 缓冲区未满：尾部即最新数据
         for (u32 i = (u32)hist.size() - count; i < (u32)hist.size(); i++)
             sum += hist[i];
     } else {
-        // 缓冲区已满：从写入位置倒序读取最新 count 个
         u32 writePos = s_HistoryIndex[name];
         for (u32 i = 0; i < count; i++) {
             u32 idx = (writePos - 1 - i + HISTORY_SIZE) % HISTORY_SIZE;
@@ -84,7 +98,9 @@ void Profiler::PrintReport() {
     LOG_DEBUG("=== Profiler 帧报告 (%.2f ms 总计) ===", s_LastFrame.TotalFrameMs);
     for (auto& t : s_LastFrame.Timers) {
         f64 avg = GetAverageMs(t.Name, 60);
-        LOG_DEBUG("  %-24s %.3f ms (平均: %.3f ms)", t.Name.c_str(), t.DurationMs, avg);
+        // 缩进显示层级
+        std::string indent(t.Depth * 2, ' ');
+        LOG_DEBUG("  %s%-20s %.3f ms (avg: %.3f ms)", indent.c_str(), t.Name.c_str(), t.DurationMs, avg);
     }
 }
 

@@ -48,6 +48,23 @@ struct AABB {
 
     glm::vec3 Center() const { return (Min + Max) * 0.5f; }
     glm::vec3 HalfSize() const { return (Max - Min) * 0.5f; }
+    glm::vec3 Size() const { return Max - Min; }
+    glm::vec3 Extents() const { return HalfSize(); }
+
+    float SurfaceArea() const {
+        glm::vec3 d = Size();
+        return 2.0f * (d.x*d.y + d.y*d.z + d.z*d.x);
+    }
+
+    void Expand(const glm::vec3& point) {
+        Min = glm::min(Min, point);
+        Max = glm::max(Max, point);
+    }
+
+    void Expand(const AABB& other) {
+        Min = glm::min(Min, other.Min);
+        Max = glm::max(Max, other.Max);
+    }
 
     void Merge(const AABB& other) {
         Min = glm::min(Min, other.Min);
@@ -58,6 +75,26 @@ struct AABB {
         return point.x >= Min.x && point.x <= Max.x &&
                point.y >= Min.y && point.y <= Max.y &&
                point.z >= Min.z && point.z <= Max.z;
+    }
+
+    bool Intersects(const AABB& other) const {
+        return Min.x <= other.Max.x && Max.x >= other.Min.x &&
+               Min.y <= other.Max.y && Max.y >= other.Min.y &&
+               Min.z <= other.Max.z && Max.z >= other.Min.z;
+    }
+
+    /// 射线-AABB 交叉 (slab method)
+    bool RayIntersect(const glm::vec3& origin, const glm::vec3& invDir,
+                      float tMin = 0.0f, float tMax = 1e30f) const {
+        for (int i = 0; i < 3; i++) {
+            float t1 = (Min[i] - origin[i]) * invDir[i];
+            float t2 = (Max[i] - origin[i]) * invDir[i];
+            if (t1 > t2) std::swap(t1, t2);
+            tMin = std::max(tMin, t1);
+            tMax = std::min(tMax, t2);
+            if (tMin > tMax) return false;
+        }
+        return true;
     }
 };
 

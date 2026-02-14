@@ -5,9 +5,10 @@
 
 namespace Engine {
 
-// ── 材质 ────────────────────────────────────────────────────
+// ── 旧材质 (Blinn-Phong, 已弃用) ────────────────────────────
+// 新代码请使用 material.h 中的 Material 类
 
-struct Material {
+struct [[deprecated("使用 Material 类替代")]] LegacyMaterial {
     glm::vec3 Ambient  = { 0.2f, 0.2f, 0.2f };
     glm::vec3 Diffuse  = { 0.8f, 0.8f, 0.8f };
     glm::vec3 Specular = { 1.0f, 1.0f, 1.0f };

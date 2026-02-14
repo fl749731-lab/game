@@ -17,6 +17,10 @@ enum class LogLevel {
     Fatal
 };
 
+// ── 日志回调 (Console 集成) ──────────────────────────────────
+
+using LogCallback = void(*)(LogLevel level, const char* message);
+
 // ── 日志系统 ────────────────────────────────────────────────
 
 class Logger {
@@ -25,8 +29,12 @@ public:
     static void SetLevel(LogLevel level);
     static void Log(LogLevel level, const char* file, int line, const char* fmt, ...);
 
+    /// 设置日志回调 (Console 用来接收日志)
+    static void SetCallback(LogCallback callback);
+
 private:
     static LogLevel s_Level;
+    static LogCallback s_Callback;
     static void SetConsoleColor(LogLevel level);
     static void ResetConsoleColor();
     static const char* LevelToString(LogLevel level);

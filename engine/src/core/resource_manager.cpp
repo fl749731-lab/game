@@ -9,6 +9,7 @@ namespace Engine {
 std::unordered_map<std::string, Ref<Shader>> ResourceManager::s_Shaders;
 std::unordered_map<std::string, Ref<Texture2D>> ResourceManager::s_Textures;
 std::unordered_map<std::string, Scope<Mesh>> ResourceManager::s_Meshes;
+std::unordered_map<std::string, Ref<Material>> ResourceManager::s_Materials;
 
 // ── Shader ──────────────────────────────────────────────────
 
@@ -120,16 +121,39 @@ Mesh* ResourceManager::GetMesh(const std::string& name) {
 // ── 全局 ────────────────────────────────────────────────────
 
 void ResourceManager::Clear() {
-    LOG_INFO("[资源] 清除全部缓存: %zu shaders, %zu textures, %zu meshes",
-        s_Shaders.size(), s_Textures.size(), s_Meshes.size());
+    LOG_INFO("[资源] 清除全部缓存: %zu shaders, %zu textures, %zu meshes, %zu materials",
+        s_Shaders.size(), s_Textures.size(), s_Meshes.size(), s_Materials.size());
     s_Shaders.clear();
     s_Textures.clear();
     s_Meshes.clear();
+    s_Materials.clear();
 }
 
 void ResourceManager::PrintStats() {
-    LOG_INFO("[资源] 统计: Shaders=%zu, Textures=%zu, Meshes=%zu",
-        s_Shaders.size(), s_Textures.size(), s_Meshes.size());
+    LOG_INFO("[资源] 统计: Shaders=%zu, Textures=%zu, Meshes=%zu, Materials=%zu",
+        s_Shaders.size(), s_Textures.size(), s_Meshes.size(), s_Materials.size());
+}
+
+// ── Material ──────────────────────────────────────────────────────
+
+void ResourceManager::StoreMaterial(const std::string& name, Ref<Material> mat) {
+    mat->Name = name;
+    s_Materials[name] = mat;
+    LOG_DEBUG("[资源] Material '%s' 已缓存", name.c_str());
+}
+
+Ref<Material> ResourceManager::GetMaterial(const std::string& name) {
+    auto it = s_Materials.find(name);
+    if (it != s_Materials.end()) return it->second;
+    return nullptr;
+}
+
+Ref<Material> ResourceManager::CreateMaterial(const std::string& name, Ref<Shader> shader) {
+    auto mat = std::make_shared<Material>(shader);
+    mat->Name = name;
+    s_Materials[name] = mat;
+    LOG_INFO("[资源] Material '%s' 已创建并缓存", name.c_str());
+    return mat;
 }
 
 // ── Model (glTF / OBJ) ────────────────────────────────────
