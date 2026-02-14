@@ -78,10 +78,11 @@
 ## 架构
 
 ```text
-engine/       ← C++ 引擎静态库 (核心渲染/物理/ECS/音频)
+engine/       ← C++ 引擎静态库 (核心渲染/物理/ECS/音频/编辑器)
 sandbox/      ← 测试沙盒应用
 ai/           ← 脚本逻辑层 (通用脚本 + 层级 AI 行为, 可选)
-third_party/  ← 第三方依赖 (glfw, glad, glm, stb, imgui, pybind11)
+data/         ← Java 数据层 (JNI 桥接, 可选)
+third_party/  ← 第三方依赖 (glfw, glad, glm, stb, imgui, cgltf, miniaudio, pybind11)
 tests/        ← 单元测试 (Google Test)
 docs/         ← 文档与基准测试
 ```
@@ -136,7 +137,7 @@ Pass *: Overdraw 可视化   → 片元叠加计数 → 热力图覆盖 (可选)
 | 图形 | OpenGL 4.5 (GLSL 450) |
 | 窗口/输入 | GLFW 3.x |
 | 数学 | GLM |
-| 图像/字体 | stb_image, stb_truetype |
+| 图像/字体 | stb_image, stb_image_write, stb_truetype |
 | GL 加载 | 自定义 GLAD |
 | 模型 | cgltf (glTF), 自定义 OBJ |
 | 音频 | miniaudio |
@@ -144,6 +145,7 @@ Pass *: Overdraw 可视化   → 片元叠加计数 → 热力图覆盖 (可选)
 | AI 桥接 | pybind11 (C++ ↔ Python) |
 | 构建 | CMake 3.20+ |
 | CI | GitHub Actions (Windows MSVC + Ubuntu GCC) |
+| 数据桥接 | JNI (C++ ↔ Java, 可选) |
 
 ## 构建
 
@@ -270,10 +272,10 @@ cd build && ctest --output-on-failure
 本项目使用了以下优秀的开源库：
 
 | 库 | 用途 | 许可证 |
-|----|------|--------|
+| --- | --- | --- |
 | [GLFW](https://www.glfw.org/) | 窗口/输入管理 | Zlib |
 | [GLM](https://github.com/g-truc/glm) | 数学库 | MIT |
-| [stb](https://github.com/nothings/stb) | 图像加载 | Public Domain |
+| [stb](https://github.com/nothings/stb) | 图像加载/写入 + 字体渲染 | Public Domain |
 | [Dear ImGui](https://github.com/ocornut/imgui) | 调试 UI / 编辑器 | MIT |
 | [miniaudio](https://miniaud.io/) | 音频系统 | Public Domain |
 | [cgltf](https://github.com/jkuhlmann/cgltf) | glTF 解析 | MIT |
