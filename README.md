@@ -88,12 +88,14 @@ docs/         ← 文档与基准测试
 
 ### ECS 设计
 
-- **存储**: 基于类型擦除的 `ComponentPool`（`unordered_map<Entity, unique_ptr<Component>>`，AoS 布局）
+- **存储**: `ComponentArray<T>` — Sparse Set **SoA** 布局（Dense 数据紧密排列，缓存友好；Sparse 映射 O(1) 查找；swap-and-pop 删除）
 - **实体 ID**: 32 位递增 ID，`CreateEntity()` 自动附加 `TagComponent`
-- **遍历**: 模板化 `ForEach<T>()` 回调，避免 `std::function` 堆分配
+- **遍历**: 模板化 `ForEach<T>()` 线性扫描 + `ForEach2<T1,T2>()` 双组件联合查询（以小池驱动）
+- **并行**: `ParallelForEach<T>()` 多线程分块遍历（基于 `JobSystem` 线程池）
+- **层级**: 父子关系 (`SetParent` / `GetRootEntities`) + `TransformSystem` 递归计算世界矩阵
 - **系统**: 继承 `System` 基类，串行更新（内置 `MovementSystem`、`LifetimeSystem`、`TransformSystem`、`ScriptSystem`）
-- **当前适用规模**: 中小场景（<1000 实体）
-- **优化路线**: 计划迁移至 SoA 稀疏集存储，支持多线程系统并行
+- **组件**: Transform、Tag、Health、Velocity、AI、Squad、Script、Render、Material、RotationAnim 等 10+ 组件
+- **直接访问**: `RawData()` / `RawEntities()` 暴露底层数组指针，供高性能批处理使用
 
 ### 延迟渲染管线
 
