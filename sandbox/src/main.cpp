@@ -154,6 +154,10 @@ int main() {
     Engine::AudioEngine::Init();
     Engine::SpriteBatch::Init();
 
+    // 多线程任务系统
+    Engine::JobSystem::Init();
+    Engine::AsyncLoader::Init();
+
     // 天空盒 (夜晚配色)
     Engine::Skybox::SetTopColor(0.02f, 0.02f, 0.12f);
     Engine::Skybox::SetHorizonColor(0.15f, 0.08f, 0.2f);
@@ -405,6 +409,9 @@ int main() {
             Engine::DebugDraw::AABB(mn, mx, {0.2f, 0.8f, 0.2f});
         });
 
+        // ── 异步资源上传 (每帧最多 4 个) ────────────────────
+        Engine::AsyncLoader::FlushUploads(4);
+
         // ═════════════════════════════════════════════════════
         //  ★ 一行渲染：SceneRenderer 处理一切
         // ═════════════════════════════════════════════════════
@@ -482,6 +489,8 @@ int main() {
     Engine::AudioEngine::Shutdown();
     Engine::Skybox::Shutdown();
     Engine::SceneRenderer::Shutdown();   // 内部清理 FBO + Shader + Bloom + PostProcess
+    Engine::AsyncLoader::Shutdown();
+    Engine::JobSystem::Shutdown();
     Engine::SceneManager::Clear();
     Engine::ResourceManager::Clear();
     Engine::Renderer::Shutdown();

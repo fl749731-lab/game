@@ -472,6 +472,11 @@ void AIManager::UpdateSquadLeaders(Scene& scene, f32 dt) {
 void AIManager::UpdateSoldiers(Scene& scene, f32 dt) {
     auto& world = scene.GetWorld();
 
+    // AI 距离 LOD: 远处 AI 降低更新频率
+    static u32 s_FrameCounter = 0;
+    s_FrameCounter++;
+    glm::vec3 playerPos = PlayerTracker::GetPlayerPosition();
+
     for (auto e : world.GetEntities()) {
         auto* sq = world.GetComponent<SquadComponent>(e);
         auto* aiComp = world.GetComponent<AIComponent>(e);
@@ -482,6 +487,18 @@ void AIManager::UpdateSoldiers(Scene& scene, f32 dt) {
 
         auto* hpComp = world.GetComponent<HealthComponent>(e);
         if (hpComp && hpComp->Current <= 0) continue;
+
+        // ── 距离 LOD ──────────────────────────────────────
+        auto* tr = world.GetComponent<TransformComponent>(e);
+        if (tr) {
+            f32 dist = glm::distance(tr->GetWorldPosition(), playerPos);
+            // 近距离 (<30): 每帧更新
+            // 中距离 (30~60): 每 2 帧更新
+            // 远距离 (>60): 每 4 帧更新
+            if (dist > 60.0f && (s_FrameCounter % 4) != 0) continue;
+            if (dist > 30.0f && (s_FrameCounter % 2) != 0) continue;
+        }
+        // ────────────────────────────────────────────────
 
         AIContext ctx = BuildContext(scene, e, dt);
 

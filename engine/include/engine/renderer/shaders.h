@@ -199,6 +199,100 @@ uniform vec3 uColor;
 void main() { FragColor = vec4(uColor, 1.0); }
 )";
 
+// ── 延迟渲染: G-Buffer 实例化 Shader ────────────────────────
+
+inline const char* GBufferInstancedVertex = R"(
+#version 450 core
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec2 aTexCoord;
+layout(location = 3) in vec3 aTangent;
+layout(location = 4) in vec3 aBitangent;
+
+// 实例属性 (per-instance)
+layout(location = 5)  in vec4 iModel0;
+layout(location = 6)  in vec4 iModel1;
+layout(location = 7)  in vec4 iModel2;
+layout(location = 8)  in vec4 iModel3;
+layout(location = 9)  in vec4 iAlbedo;       // rgb=albedo, a=metallic
+layout(location = 10) in vec4 iEmissiveInfo; // rgb=emissive, a=intensity
+layout(location = 11) in vec4 iMatParams;    // x=roughness, y=useTex, z=useNormal, w=isEmissive
+
+out vec3 vFragPos;
+out vec3 vNormal;
+out vec2 vTexCoord;
+out mat3 vTBN;
+flat out vec4 vAlbedo;
+flat out vec4 vEmissiveInfo;
+flat out vec4 vMatParams;
+
+uniform mat4 uVP;
+
+void main() {
+    mat4 model = mat4(iModel0, iModel1, iModel2, iModel3);
+    mat3 normalMat = transpose(inverse(mat3(model)));
+
+    vec4 wp = model * vec4(aPos, 1.0);
+    vFragPos = wp.xyz;
+    vNormal  = normalize(normalMat * aNormal);
+    vTexCoord = aTexCoord;
+
+    vec3 T = normalize(normalMat * aTangent);
+    vec3 B = normalize(normalMat * aBitangent);
+    vTBN = mat3(T, B, vNormal);
+
+    // 传递实例材质参数
+    vAlbedo       = iAlbedo;
+    vEmissiveInfo = iEmissiveInfo;
+    vMatParams    = iMatParams;
+
+    gl_Position = uVP * wp;
+}
+)";
+
+inline const char* GBufferInstancedFragment = R"(
+#version 450 core
+layout(location = 0) out vec3 gPosition;
+layout(location = 1) out vec3 gNormal;
+layout(location = 2) out vec4 gAlbedoSpec;
+layout(location = 3) out vec4 gEmissive;
+
+in vec3 vFragPos;
+in vec3 vNormal;
+in vec2 vTexCoord;
+in mat3 vTBN;
+flat in vec4 vAlbedo;
+flat in vec4 vEmissiveInfo;
+flat in vec4 vMatParams;
+
+uniform sampler2D uTex;
+uniform sampler2D uNormalMap;
+
+void main() {
+    gPosition = vFragPos;
+
+    // 法线 (支持法线贴图)
+    vec3 N = normalize(vNormal);
+    if (vMatParams.z > 0.5) {
+        vec3 mapN = texture(uNormalMap, vTexCoord).rgb * 2.0 - 1.0;
+        N = normalize(vTBN * mapN);
+    }
+    gNormal = N;
+
+    // PBR: Albedo + Metallic
+    vec3 albedo = vAlbedo.rgb;
+    if (vMatParams.y > 0.5) albedo = texture(uTex, vTexCoord).rgb;
+    gAlbedoSpec = vec4(albedo, vAlbedo.a);
+
+    // Emissive + Roughness
+    if (vMatParams.w > 0.5) {
+        gEmissive = vec4(vEmissiveInfo.rgb * vEmissiveInfo.a, vMatParams.x);
+    } else {
+        gEmissive = vec4(0.0, 0.0, 0.0, vMatParams.x);
+    }
+}
+)";
+
 // ── 延迟渲染: G-Buffer 几何 Shader ─────────────────────────
 
 inline const char* GBufferVertex = R"(

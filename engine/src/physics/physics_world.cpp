@@ -115,13 +115,14 @@ void PhysicsWorld::IntegrateForces(ECSWorld& world, f32 dt) {
     auto& rbPool = world.GetComponentArray<RigidBodyComponent>();
     u32 count = rbPool.Size();
 
-    for (u32 i = 0; i < count; i++) {
+    // 并行积分：每个刚体只写自己的 Velocity/Position，无数据竞争
+    JobSystem::ParallelFor(0u, count, [&](u32 i) {
         RigidBodyComponent& rb = rbPool.Data(i);
-        if (rb.IsStatic || rb.IsSleeping) continue;
+        if (rb.IsStatic || rb.IsSleeping) return;
 
         Entity e = rbPool.GetEntity(i);
         auto* tr = world.GetComponent<TransformComponent>(e);
-        if (!tr) continue;
+        if (!tr) return;
 
         if (rb.UseGravity) rb.Velocity += rb.GravityOverride * dt;
         rb.Velocity += rb.Acceleration * dt;
@@ -143,7 +144,7 @@ void PhysicsWorld::IntegrateForces(ECSWorld& world, f32 dt) {
         }
 
         rb.Acceleration = {0, 0, 0};
-    }
+    });
 }
 
 // ── 复合碰撞体窄相 ─────────────────────────────────────────
@@ -493,7 +494,9 @@ void PhysicsWorld::DetectCollisions(ECSWorld& world) {
             }
         }
     } else {
-        SpatialHash grid(4.0f);
+        // 持久化空间哈希网格 (避免每帧重建 unordered_map)
+        static SpatialHash grid(4.0f);
+        grid.Clear();
         std::unordered_map<u32, size_t> entityIndex;
         for (size_t i = 0; i < entities.size(); i++) {
             grid.Insert(entities[i].e, entities[i].worldAABB);

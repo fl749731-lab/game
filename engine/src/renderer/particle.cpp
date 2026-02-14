@@ -242,8 +242,10 @@ void ParticleSystem::Draw(const f32* viewProjectionMatrix,
     glDrawArraysInstanced(GL_TRIANGLES, 0, 6, (GLsizei)s_InstanceBuffer.size());
     glBindVertexArray(0);
 
+    // 恢复 GL 状态到默认
     glDepthMask(GL_TRUE);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_BLEND);  // 由调用方按需重新开启
 }
 
 u32 ParticleSystem::GetAliveCount() { return s_AliveCount; }

@@ -30,6 +30,15 @@ public:
     static Ref<Texture2D> LoadTexture(const std::string& name,
                                        const std::string& filepath);
     static Ref<Texture2D> GetTexture(const std::string& name);
+    /// 直接缓存纹理对象（供 AsyncLoader 使用）
+    static void CacheTexture(const std::string& name, Ref<Texture2D> tex);
+
+    // ── 异步加载 ─────────────────────────────────────────────
+    static void LoadTextureAsync(const std::string& name,
+                                  const std::string& filepath,
+                                  std::function<void(Ref<Texture2D>)> callback = nullptr);
+    static void LoadModelAsync(const std::string& filepath,
+                                std::function<void(std::vector<std::string>)> callback = nullptr);
 
     // ── Mesh ────────────────────────────────────────────────
     static void StoreMesh(const std::string& name, Scope<Mesh> mesh);
