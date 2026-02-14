@@ -4,6 +4,7 @@
 #include "engine/renderer/shader.h"
 #include "engine/renderer/texture.h"
 #include "engine/renderer/mesh.h"
+#include "engine/renderer/material.h"
 #include "engine/renderer/gltf_loader.h"
 #include "engine/core/log.h"
 
@@ -48,6 +49,11 @@ public:
     static void Clear();
     static void PrintStats();
 
+    // ── Material ─────────────────────────────────────────────
+    static void StoreMaterial(const std::string& name, Ref<Material> mat);
+    static Ref<Material> GetMaterial(const std::string& name);
+    static Ref<Material> CreateMaterial(const std::string& name, Ref<Shader> shader);
+
     // ── Model (glTF / OBJ) ──────────────────────────────────
     /// 根据后缀自动选择加载器，返回模型名称列表
     static std::vector<std::string> LoadModel(const std::string& filepath);
@@ -56,6 +62,7 @@ private:
     static std::unordered_map<std::string, Ref<Shader>> s_Shaders;
     static std::unordered_map<std::string, Ref<Texture2D>> s_Textures;
     static std::unordered_map<std::string, Scope<Mesh>> s_Meshes;
+    static std::unordered_map<std::string, Ref<Material>> s_Materials;
 };
 
 } // namespace Engine

@@ -17,6 +17,8 @@
 #include "engine/core/prefab.h"
 #include "engine/core/job_system.h"
 #include "engine/core/async_loader.h"
+#include "engine/core/application.h"
+#include "engine/core/allocator.h"
 
 // Platform
 #include "engine/platform/window.h"
@@ -30,6 +32,7 @@
 #include "engine/renderer/camera.h"
 #include "engine/renderer/light.h"
 #include "engine/renderer/mesh.h"
+#include "engine/renderer/material.h"
 #include "engine/renderer/framebuffer.h"
 #include "engine/renderer/post_process.h"
 #include "engine/renderer/skybox.h"
@@ -37,6 +40,8 @@
 #include "engine/renderer/bloom.h"
 #include "engine/renderer/scene_renderer.h"
 #include "engine/renderer/shaders.h"
+#include "engine/renderer/shader_library.h"
+#include "engine/renderer/render_queue.h"
 #include "engine/renderer/fps_camera_controller.h"
 #include "engine/renderer/shadow_map.h"
 #include "engine/renderer/frustum.h"
@@ -44,21 +49,31 @@
 #include "engine/renderer/sprite_batch.h"
 #include "engine/renderer/font.h"
 #include "engine/renderer/gltf_loader.h"
+#include "engine/renderer/viewport_modes.h"
 
 // Debug
 #include "engine/debug/debug_draw.h"
 #include "engine/debug/debug_ui.h"
 #include "engine/debug/profiler.h"
+#include "engine/debug/engine_diagnostics.h"
+#include "engine/debug/charts.h"
+#include "engine/debug/stat_system.h"
+#include "engine/debug/console.h"
+#include "engine/debug/gpu_profiler.h"
 
 // Editor
 #include "engine/editor/editor.h"
+#include "engine/editor/gizmo.h"
+#include "engine/editor/node_graph.h"
 
 // Physics
 #include "engine/physics/collision.h"
 #include "engine/physics/physics_world.h"
+#include "engine/physics/bvh.h"
 
 // Audio
 #include "engine/audio/audio_engine.h"
+#include "engine/audio/audio_mixer.h"
 
 // AI (optional)
 #ifdef ENGINE_HAS_PYTHON
