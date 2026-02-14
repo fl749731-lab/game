@@ -432,10 +432,14 @@ uniform float uSLConstant[MAX_SL];
 uniform float uSLLinear[MAX_SL];
 uniform float uSLQuadratic[MAX_SL];
 
-// 阴影
-uniform sampler2D uShadowMap;
-uniform int   uShadowEnabled;
-uniform mat4  uLightSpaceMat;
+// CSM (级联阴影)
+#define CSM_COUNT 4
+uniform sampler2D uCSMShadowMap[CSM_COUNT];
+uniform mat4  uCSMLightSpace[CSM_COUNT];
+uniform float uCSMSplitDist[CSM_COUNT];
+uniform int   uCSMEnabled;
+uniform int   uCSMCascadeCount;
+uniform mat4  uViewMat;  // 用于将片段转换到视图空间
 
 // 摄像机
 uniform vec3  uViewPos;
@@ -477,23 +481,79 @@ vec3 FresnelSchlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-// ── 阴影计算 ────────────────────────────────────────
-float CalcShadow(vec3 fragPos, vec3 normal, vec3 lightDir) {
-    vec4 lsPos = uLightSpaceMat * vec4(fragPos, 1.0);
+// ── CSM 阴影计算 ────────────────────────────────────────
+float CalcCSMShadow(vec3 fragPos, vec3 normal, vec3 lightDir) {
+    // 计算视图空间深度
+    vec4 viewPos = uViewMat * vec4(fragPos, 1.0);
+    float depth = -viewPos.z;  // 视图空间中 z 为负
+
+    // 确定当前级联
+    int cascade = 0;
+    for (int i = 0; i < CSM_COUNT; i++) {
+        if (depth < uCSMSplitDist[i]) {
+            cascade = i;
+            break;
+        }
+        cascade = i;
+    }
+
+    // 变换到光照空间
+    vec4 lsPos = uCSMLightSpace[cascade] * vec4(fragPos, 1.0);
     vec3 proj = lsPos.xyz / lsPos.w;
     proj = proj * 0.5 + 0.5;
     if (proj.z > 1.0) return 0.0;
 
-    float bias = max(0.005 * (1.0 - dot(normal, lightDir)), 0.001);
+    // 动态 slope-scale bias (远级联用更大的 bias)
+    float baseBias = 0.005 * float(cascade + 1);
+    float bias = max(baseBias * (1.0 - dot(normal, lightDir)), 0.001);
+
+    // PCF 3×3 采样
     float shadow = 0.0;
-    vec2 texelSize = 1.0 / textureSize(uShadowMap, 0);
-    for (int x = -1; x <= 1; x++) {
-        for (int y = -1; y <= 1; y++) {
-            float d = texture(uShadowMap, proj.xy + vec2(x,y) * texelSize).r;
-            shadow += (proj.z - bias > d) ? 1.0 : 0.0;
+    vec2 texelSize;
+    // 每个级联分别采样
+    if (cascade == 0) {
+        texelSize = 1.0 / textureSize(uCSMShadowMap[0], 0);
+        for (int x = -1; x <= 1; x++) {
+            for (int y = -1; y <= 1; y++) {
+                float d = texture(uCSMShadowMap[0], proj.xy + vec2(x,y) * texelSize).r;
+                shadow += (proj.z - bias > d) ? 1.0 : 0.0;
+            }
+        }
+    } else if (cascade == 1) {
+        texelSize = 1.0 / textureSize(uCSMShadowMap[1], 0);
+        for (int x = -1; x <= 1; x++) {
+            for (int y = -1; y <= 1; y++) {
+                float d = texture(uCSMShadowMap[1], proj.xy + vec2(x,y) * texelSize).r;
+                shadow += (proj.z - bias > d) ? 1.0 : 0.0;
+            }
+        }
+    } else if (cascade == 2) {
+        texelSize = 1.0 / textureSize(uCSMShadowMap[2], 0);
+        for (int x = -1; x <= 1; x++) {
+            for (int y = -1; y <= 1; y++) {
+                float d = texture(uCSMShadowMap[2], proj.xy + vec2(x,y) * texelSize).r;
+                shadow += (proj.z - bias > d) ? 1.0 : 0.0;
+            }
+        }
+    } else {
+        texelSize = 1.0 / textureSize(uCSMShadowMap[3], 0);
+        for (int x = -1; x <= 1; x++) {
+            for (int y = -1; y <= 1; y++) {
+                float d = texture(uCSMShadowMap[3], proj.xy + vec2(x,y) * texelSize).r;
+                shadow += (proj.z - bias > d) ? 1.0 : 0.0;
+            }
         }
     }
-    return shadow / 9.0;
+    shadow /= 9.0;
+
+    // 级联边界平滑过渡 (在分割距离附近淡出)
+    if (cascade < CSM_COUNT - 1) {
+        float splitDist = uCSMSplitDist[cascade];
+        float fadeFactor = clamp((splitDist - depth) / (splitDist * 0.1), 0.0, 1.0);
+        shadow *= fadeFactor;
+    }
+
+    return shadow;
 }
 
 // ── 单光源 PBR 光照计算 ─────────────────────────────
@@ -546,8 +606,8 @@ void main() {
     // ── 阴影 ────────────────────────────────────
     vec3 L = normalize(-uDirLightDir);
     float shadow = 0.0;
-    if (uShadowEnabled == 1) {
-        shadow = CalcShadow(FragPos, N, L);
+    if (uCSMEnabled == 1) {
+        shadow = CalcCSMShadow(FragPos, N, L);
     }
 
     // ── 环境光（简化 IBL：常量环境 × AO） ─────────

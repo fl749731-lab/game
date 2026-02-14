@@ -9,7 +9,7 @@
 #include "engine/renderer/ssr.h"
 #include "engine/renderer/particle.h"
 #include "engine/renderer/texture.h"
-#include "engine/renderer/shadow_map.h"
+#include "engine/renderer/cascaded_shadow_map.h"
 #include "engine/renderer/frustum.h"
 #include "engine/renderer/g_buffer.h"
 #include "engine/renderer/screen_quad.h"
@@ -154,7 +154,7 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
     PostProcess::Init();
     PostProcess::SetExposure(s_Exposure);
     Bloom::Init(config.Width, config.Height);
-    ShadowMap::Init();
+    CascadedShadowMap::Init();
     SSAO::Init(config.Width, config.Height);
     SSR::Init(config.Width, config.Height);
 
@@ -174,7 +174,7 @@ void SceneRenderer::Shutdown() {
     s_BlitShader.reset();
     BatchRenderer::Shutdown();
     Bloom::Shutdown();
-    ShadowMap::Shutdown();
+    CascadedShadowMap::Shutdown();
     SSAO::Shutdown();
     SSR::Shutdown();
     PostProcess::Shutdown();
@@ -264,36 +264,48 @@ void SceneRenderer::RenderScene(Scene& scene, PerspectiveCamera& camera) {
     s_FrameStats.BatchedCount   = BatchRenderer::GetInstanceCount();
 }
 
-// ── Pass 0: 阴影深度 ───────────────────────────────────────
+// ── Pass 0: CSM 阴影深度 ───────────────────────────────────
 
 void SceneRenderer::ShadowPass(Scene& scene, PerspectiveCamera& camera) {
     auto& dirLight = scene.GetDirLight();
-    ShadowMap::BeginShadowPass(dirLight);
-    auto depthShader = ShadowMap::GetDepthShader();
+
+    // 更新 CSM 级联
+    CascadedShadowMap::UpdateCascades(camera, dirLight);
+
+    auto depthShader = CascadedShadowMap::GetDepthShader();
     auto& world = scene.GetWorld();
 
-    // 光空间视锥剔除
-    Frustum lightFrustum;
-    lightFrustum.ExtractFromVP(ShadowMap::GetLightSpaceMatrix());
+    // 对每个级联渲染深度
+    for (u32 c = 0; c < CSM_CASCADE_COUNT; c++) {
+        CascadedShadowMap::BeginCascadePass(c);
 
-    for (auto e : world.GetEntities()) {
-        auto* tr = world.GetComponent<TransformComponent>(e);
-        auto* rc = world.GetComponent<RenderComponent>(e);
-        if (!tr || !rc) continue;
+        // 光空间视锥剔除
+        Frustum lightFrustum;
+        lightFrustum.ExtractFromVP(CascadedShadowMap::GetLightSpaceMatrices()[c]);
 
-        // 剔除光照视锥外的实体
-        glm::vec3 wp = tr->GetWorldPosition();
-        AABB worldAABB;
-        worldAABB.Min = wp - tr->GetScale() * 0.5f;
-        worldAABB.Max = wp + tr->GetScale() * 0.5f;
-        if (rc->MeshType != "plane" && !lightFrustum.IsAABBVisible(worldAABB))
-            continue;
+        for (auto e : world.GetEntities()) {
+            auto* tr = world.GetComponent<TransformComponent>(e);
+            auto* rc = world.GetComponent<RenderComponent>(e);
+            if (!tr || !rc) continue;
 
-        depthShader->SetMat4("uModel", glm::value_ptr(tr->WorldMatrix));
-        auto* mesh = ResourceManager::GetMesh(rc->MeshType);
-        if (mesh) mesh->Draw();
+            // 剔除光照视锥外的实体
+            glm::vec3 wp = tr->GetWorldPosition();
+            AABB worldAABB;
+            worldAABB.Min = wp - tr->GetScale() * 0.5f;
+            worldAABB.Max = wp + tr->GetScale() * 0.5f;
+            if (rc->MeshType != "plane" && !lightFrustum.IsAABBVisible(worldAABB))
+                continue;
+
+            depthShader->SetMat4("uModel", glm::value_ptr(tr->WorldMatrix));
+            auto* mesh = ResourceManager::GetMesh(rc->MeshType);
+            if (mesh) mesh->Draw();
+        }
+
+        CascadedShadowMap::EndCascadePass();
     }
-    ShadowMap::EndShadowPass();
+
+    // 恢复视口
+    Renderer::SetViewport(0, 0, s_Width, s_Height);
 }
 
 // ── Pass 1: G-Buffer 几何 ──────────────────────────────────
@@ -334,7 +346,15 @@ void SceneRenderer::LightingPass(Scene& scene, PerspectiveCamera& camera) {
         s_DeferredShader->SetInt("uSSAOEnabled", 0);
     }
 
-    // 设置光照 Uniform
+    // CSM 阴影纹理 (纹理单元 6~9)
+    u32 csmStartUnit = 6;
+    CascadedShadowMap::BindCascadeTextures(csmStartUnit);
+    CascadedShadowMap::SetUniforms(s_DeferredShader.get(), csmStartUnit);
+
+    // 传递视图矩阵 (用于 CSM 级联选择)
+    s_DeferredShader->SetMat4("uViewMat", glm::value_ptr(camera.GetViewMatrix()));
+
+    // 设置光照 Uniform (方向光/点光/聚光灯/viewPos/ambient)
     SetupLightUniforms(scene, s_DeferredShader.get(), camera);
 
     // 绘制全屏四边形
@@ -601,12 +621,7 @@ void SceneRenderer::SetupLightUniforms(Scene& scene, Shader* shader, Perspective
     shader->SetVec3("uViewPos", cp.x, cp.y, cp.z);
     shader->SetFloat("uAmbientStrength", 0.15f);
 
-    // 阴影
-    shader->SetMat4("uLightSpaceMat", glm::value_ptr(ShadowMap::GetLightSpaceMatrix()));
-    shader->SetInt("uShadowEnabled", 1);
-    shader->SetInt("uShadowMap", 4);  // 纹理单元 4
-    glActiveTexture(GL_TEXTURE0 + 4);
-    glBindTexture(GL_TEXTURE_2D, ShadowMap::GetShadowTextureID());
+    // 阴影 (CSM 已在 LightingPass 中单独设置，这里跳过旧代码)
 
     // 点光源
     int plCount = std::min((int)pls.size(), (int)MAX_POINT_LIGHTS);
