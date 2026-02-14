@@ -1,11 +1,9 @@
 # 🎮 Game Engine
 
 [![Build Engine](https://github.com/fl749731-lab/game/actions/workflows/build.yml/badge.svg)](https://github.com/fl749731-lab/game/actions/workflows/build.yml)
+**[English](README_EN.md) | 中文**
 
 一个从零构建的通用 2D/3D 游戏引擎，使用 C/C++ 开发。
-
-<!-- 在此添加引擎渲染效果截图 -->
-<!-- ![渲染效果](docs/screenshots/demo.png) -->
 
 > 🚧 **活跃开发中** — 个人学习项目，持续迭代。
 
@@ -22,7 +20,7 @@
 | SSR | ✅ | 视图空间 Ray Marching 64 步 + HDR 采样 |
 | 实例化渲染 | ✅ | Dynamic VBO + glDrawArraysInstanced (万级实例) |
 | HDR + Bloom | ✅ | Reinhard 色调映射 + 高斯模糊泛光 |
-| 阴影映射 | ✅ | 方向光 Shadow Map + PCF 软阴影 |
+| 阴影映射 | ✅ | 方向光 Shadow Map + CSM 级联 + PCF 软阴影 |
 | GPU 骨骼蒙皮 | ✅ | 128 骨骼 × 4 权重，整型骨骼ID属性 |
 | 法线贴图 | ✅ | TBN 矩阵，CPU 预计算 |
 | 粒子系统 | ✅ | GPU Instancing |
@@ -105,14 +103,27 @@ docs/         ← 文档与基准测试
 ### 延迟渲染管线
 
 ```text
-Pass 0: Shadow Map       → 方向光深度贴图 (PCF 软阴影)
+Pass 0: Shadow Map       → 方向光深度贴图 (CSM 级联 + PCF 软阴影)
 Pass 1: G-Buffer 几何     → MRT (Position / Normal / Albedo+Metallic / Emissive+Roughness)
 Pass 2: SSAO             → 32 采样半球核 + 4×4 旋转噪声 → Blur
-Pass 3: 延迟 PBR 光照     → G-Buffer + 阴影 + AO → HDR FBO
+Pass 3: 延迟 PBR 光照     → G-Buffer + 阴影 + AO + IBL → HDR FBO
 Pass 4: SSR              → 视图空间 Ray Marching → 反射混合
 Pass 5: 前向叠加          → 天空盒 / 透明物 / 自发光 / 粒子 / 调试线
 Pass 6: Bloom + 后处理    → 亮度提取 → 高斯模糊 → Reinhard 色调映射 → 屏幕
 Pass *: Overdraw 可视化   → 片元叠加计数 → 热力图覆盖 (可选)
+```
+
+### 骨骼动画管线
+
+```text
+glTF 加载 → Skeleton + AnimationClip → AnimationSampler (CPU 关键帧插值)
+                                      → PoseBlender (姿势混合/Crossfade)
+                                      → AnimStateMachine (FSM 状态驱动)
+                                      → AnimLayerStack (基础层 + 遮罩叠加层)
+                                      → TwoBoneIK / FABRIK (逆运动学)
+                                      → RootMotionExtractor (XZ/XYZ 增量)
+                                      → AnimEventDispatcher (帧事件回调)
+                                      → SkinningUtils → skinning.glsl (GPU 蒙皮)
 ```
 
 ### 资源管理
@@ -131,19 +142,18 @@ Pass *: Overdraw 可视化   → 片元叠加计数 → 热力图覆盖 (可选)
 - **玩家意图识别**: `PlayerTracker` 采集玩家行为 → 指挥官 AI 分析模式并记忆
 - **阵型系统**: 三角/一字/散开/楔形 4 种阵型，动态位置计算
 - **可选组件**: 通过 `ENGINE_ENABLE_PYTHON` 编译开关控制（默认 OFF）
-- **非运行时必需**: 禁用时有完整 stub 实现，引擎功能不受影响
 
 ## 技术栈
 
 | 层级 | 技术 |
 | ------ | ------ |
 | 语言 | C17 / C++20 |
-| 图形 | OpenGL 4.5 (GLSL 450) |
+| 图形 | OpenGL 4.5 (GLSL 450), Vulkan 1.3 (可选) |
 | 窗口/输入 | GLFW 3.x |
 | 数学 | GLM |
 | 图像/字体 | stb_image, stb_image_write, stb_truetype |
 | GL 加载 | 自定义 GLAD |
-| 模型 | cgltf (glTF), 自定义 OBJ |
+| 模型 | cgltf (glTF 2.0 + 蒙皮), 自定义 OBJ |
 | 音频 | miniaudio |
 | UI | Dear ImGui |
 | AI 桥接 | pybind11 (C++ ↔ Python) |
@@ -193,83 +203,14 @@ cmake --build build
 | --- | :---: | --- |
 | `BUILD_TESTS` | OFF | 构建单元测试 (Google Test) |
 | `ENGINE_ENABLE_PYTHON` | OFF | 启用 Python AI 层 |
+| `ENGINE_ENABLE_VULKAN` | OFF | 启用 Vulkan 渲染后端 |
+| `ENGINE_ENABLE_JAVA` | OFF | 启用 Java 数据层 (JNI) |
 
 ```bash
-# 示例：构建并运行测试
-cmake -B build -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
+# 示例：启用 Vulkan 并构建
+cmake -B build -DENGINE_ENABLE_VULKAN=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
-cd build && ctest --output-on-failure
 ```
-
-## 引擎功能详解
-
-### 渲染管线详情
-
-- **延迟渲染管线** (G-Buffer MRT + 全屏延迟 PBR 光照)
-- **PBR 材质** (Cook-Torrance GGX BRDF, Metallic/Roughness 工作流)
-- **SSAO** (Screen Space Ambient Occlusion, 32 采样 + Blur)
-- **SSR** (Screen Space Reflections, 视图空间 Ray Marching)
-- **实例化渲染** (Dynamic VBO + glDrawArraysInstanced, 万级实例)
-- HDR 帧缓冲 + Reinhard 色调映射 + 伽马校正
-- Bloom 后处理 (亮度提取 → 高斯模糊 → 混合)
-- **IBL 环境光照** (HDR→Cubemap + 辐照度图 + 预滤波 + BRDF LUT)
-- **GPU 骨骼蒙皮** (128 骨骼 × 4 权重 + ivec4 整型属性)
-- 阴影映射 (方向光 Shadow Map + PCF 软阴影)
-- 法线贴图 (TBN 矩阵，CPU 预计算法线矩阵)
-- 粒子系统 (GPU Instancing)
-- 程序化天空盒 (三层渐变 + 太阳光晕)
-- **Overdraw 可视化** (片元叠加计数 + 六段热力图)
-- 暗角效果 / 视锥剔除
-- Sprite 批渲染 / 字体渲染
-
-### 编辑器工具详情
-
-- **节点图编辑器** — 通用节点图框架 (拖拽/连线/撤销重做/复制粘贴/对齐)
-- **材质编辑器** — 基于节点图的可视化材质编辑 (11 种预置节点)
-- **粒子编辑器** — 发射/形状/大小颜色/力/渲染 分区调节 + 4 种预设 + 实时预览
-- **时间线编辑器** — 多轨道 + 关键帧 + 播放/暂停/循环 + 缩放/平移
-- **曲线编辑器** — Hermite 样条关键帧曲线
-- **颜色拾取器** — HSV 色轮 + HDR + 渐变编辑器 + 吸管 + 最近使用/收藏
-- **层级面板** — 场景树拖拽排序 + 搜索过滤
-- **检查器面板** — 多组件属性编辑器 (Transform/Light/Material/Physics...)
-- **资源浏览器** — 文件系统浏览 + 网格/列表视图 + 搜索
-- **Gizmo** — 平移/旋转/缩放 3D 操控器
-- **拖放系统** — 跨面板拖拽 (实体/资源/颜色)
-- **热重载** — 文件监控 + Shader/脚本自动重载
-- **Docking 布局** — 多面板窗口布局管理
-- **截图系统** — 帧缓冲截图 (PNG) + 序列帧录制
-- **Prefab 系统** — 预制件保存与实例化
-
-### 核心系统详情
-
-- Entity-Component-System (ECS) / 场景管理器 / 场景序列化 (16+ 组件 JSON 存取)
-- 骨骼动画系统 (Skeleton + AnimationClip + CPU Sampler + GPU Skinning)
-- 脚本逻辑层 (ScriptSystem + EngineAPI, 30+ Python 接口)
-- 层级指挥链 AI (Commander → Squad Leader → Soldier, 玩家意图记忆)
-- 统一资源管理 (Shader/Texture/Mesh 缓存 + 异步加载)
-- 多线程任务系统 (JobSystem 线程池 + AsyncLoader 异步资源)
-- 事件系统 (EventBus + 碰撞/生命周期/场景事件)
-- 自定义内存分配器 (线性/池/栈分配器)
-- FPS 相机控制器
-
-### 物理系统详情
-
-- AABB / OBB / Sphere / Capsule 碰撞检测 (含穿透方向+深度)
-- SAT (OBB vs OBB) + GJK (OBB vs Sphere)
-- 射线检测 (Ray vs AABB / Plane)
-- BVH 加速结构
-- 刚体组件 + 碰撞回调 + CCD
-
-### 调试与分析详情
-
-- DebugDraw (线段/AABB/球体/射线/网格/坐标轴)
-- DebugUI (屏幕文本叠加)
-- Profiler (代码段计时 + 历史曲线)
-- **GPU Profiler** (Timer Query 精准计时 + ImGui 可视化)
-- **性能图表** (实时帧率/Draw Call/内存曲线)
-- **统计系统** (Draw Call / Triangle / Entity 实时计数)
-- **控制台** (命令行输入 + 日志级别过滤)
-- **引擎诊断** (GL 上下文 / 驱动信息 / 内存概况)
 
 ## 贡献
 
