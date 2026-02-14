@@ -2,12 +2,26 @@
 
 #include "engine/core/types.h"
 #include "engine/renderer/mesh.h"
+#include "engine/renderer/animation.h"
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <string>
 #include <vector>
 
 namespace Engine {
+
+// ── glTF 蒙皮顶点 ──────────────────────────────────────────
+
+struct GltfSkinVertex {
+    glm::vec3 Position;
+    glm::vec3 Normal;
+    glm::vec2 TexCoord;
+    glm::vec3 Tangent  = {1, 0, 0};
+    glm::vec3 Bitangent = {0, 0, 1};
+    glm::ivec4 BoneIDs  = {0, 0, 0, 0};   // 最多 4 根骨骼
+    glm::vec4  Weights  = {0, 0, 0, 0};   // 对应权重
+};
 
 // ── glTF PBR 材质信息 ───────────────────────────────────────
 
@@ -30,6 +44,12 @@ struct GltfMesh {
     Scope<Mesh> MeshData;
     GltfMaterial Material;
     std::string Name;
+
+    // 蒙皮数据 (可选)
+    bool HasSkin = false;
+    std::vector<GltfSkinVertex> SkinVertices;
+    Ref<Skeleton> SkeletonRef;
+    std::vector<AnimationClip> Clips;
 };
 
 // ── glTF 加载器 ────────────────────────────────────────────

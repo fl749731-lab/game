@@ -29,7 +29,7 @@
 | 程序化天空盒 | ✅ | 三层渐变 + 太阳光晕 |
 | Overdraw 可视化 | ✅ | 片元叠加计数 + 热力图 (黑→蓝→绿→黄→红→白) |
 | 暗角效果 / 视锥剔除 | ✅ | — |
-| Vulkan 后端 | 🔜 | 计划中 |
+| Vulkan 后端 | ✅ | Instance/Device/Swapchain/RenderPass/Pipeline/Renderer 框架就绪 |
 
 ### 编辑器工具
 
@@ -58,13 +58,13 @@
 | --- | :---: | --- |
 | ECS 架构 | ✅ | Entity-Component-System |
 | AABB / OBB 物理 | ✅ | 碰撞检测 + 射线检测 + BVH 加速 + OBB/球/胶囊 |
-| 骨骼动画系统 | ✅ | CPU 采样 + GPU 蒙皮 (Skeleton/AnimationClip/Sampler) |
+| 骨骼动画系统 | ✅ | 采样/混合/Crossfade/状态机/分层遮罩/IK/Root Motion/事件 |
 | 场景序列化 | ✅ | JSON Save/Load，16+ 组件全覆盖 |
 | 脚本逻辑层 | ✅ | ScriptSystem + EngineAPI (30+ Python 接口) |
 | Python AI | ✅ | pybind11 桥接 (巡逻/追击/防御) |
 | 层级指挥链 AI | ✅ | 指挥官→小队长→士兵 三层决策 + 玩家意图记忆 |
 | 音频系统 | ✅ | miniaudio (3D 空间音频 + 混音器) |
-| glTF / OBJ 加载 | ✅ | cgltf + 自定义 OBJ (含切线计算) |
+| glTF / OBJ 加载 | ✅ | cgltf + 蒙皮/骨骼/动画解析 + 自定义 OBJ (含切线计算) |
 | 多线程 JobSystem | ✅ | 线程池 + ParallelFor (物理/ECS 并行) |
 | 异步资源加载 | ✅ | AsyncLoader: 后台解码 → 主线程 GPU 上传 |
 

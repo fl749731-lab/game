@@ -3,25 +3,29 @@
 #include "engine/core/types.h"
 #include "engine/core/log.h"
 
-namespace Engine {
-
-// ── Vulkan 后端骨架 ────────────────────────────────────────
-//
-// 当前仅提供接口定义和初始化骨架
-// 后续将逐步实现 Pipeline/Buffer/Command 等子系统
-// 需要 cmake -DENGINE_ENABLE_VULKAN=ON 开启
-
 #ifdef ENGINE_ENABLE_VULKAN
 
-// ── Vulkan Context ─────────────────────────────────────────
+#include <vulkan/vulkan.h>
+
+#include <vector>
+#include <string>
+
+struct GLFWwindow;
+
+namespace Engine {
+
+// ── Vulkan Context 配置 ────────────────────────────────────
 
 struct VulkanContextConfig {
     const char* AppName     = "Engine App";
-    u32         ApiVersion  = 0;  // 0 = 自动选择
+    u32         ApiVersion  = VK_API_VERSION_1_2;
     bool        Validation  = true;
     u32         Width       = 1280;
     u32         Height      = 720;
+    GLFWwindow* Window      = nullptr;  // GLFW 窗口句柄
 };
+
+// ── Vulkan Context ─────────────────────────────────────────
 
 class VulkanContext {
 public:
@@ -29,90 +33,134 @@ public:
     static void Shutdown();
     static bool IsInitialized();
 
-    // 获取原始 Vulkan 句柄 (void* 以避免头文件依赖)
-    static void* GetInstance();
-    static void* GetPhysicalDevice();
-    static void* GetDevice();
-    static void* GetGraphicsQueue();
-    static u32   GetGraphicsQueueFamily();
-    static void* GetSurface();
+    // 原始句柄访问
+    static VkInstance       GetInstance();
+    static VkPhysicalDevice GetPhysicalDevice();
+    static VkDevice         GetDevice();
+    static VkQueue          GetGraphicsQueue();
+    static VkQueue          GetPresentQueue();
+    static u32              GetGraphicsQueueFamily();
+    static u32              GetPresentQueueFamily();
+    static VkSurfaceKHR     GetSurface();
+    static VkCommandPool    GetCommandPool();
+
+    // 辅助
+    static u32 FindMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
+    static VkFormat FindDepthFormat();
 
 private:
     static bool CreateInstance(const VulkanContextConfig& config);
+    static bool SetupDebugMessenger();
+    static bool CreateSurface(GLFWwindow* window);
     static bool SelectPhysicalDevice();
     static bool CreateLogicalDevice();
+    static bool CreateCommandPool();
+};
+
+// ── Vulkan Swapchain ───────────────────────────────────────
+
+struct SwapchainSupportDetails {
+    VkSurfaceCapabilitiesKHR Capabilities;
+    std::vector<VkSurfaceFormatKHR> Formats;
+    std::vector<VkPresentModeKHR> PresentModes;
+};
+
+class VulkanSwapchain {
+public:
+    static bool Create(u32 width, u32 height);
+    static void Destroy();
+    static void Recreate(u32 width, u32 height);
+
+    static VkSwapchainKHR   GetSwapchain();
+    static VkFormat         GetImageFormat();
+    static VkExtent2D       GetExtent();
+    static u32              GetImageCount();
+    static VkImageView      GetImageView(u32 index);
+    static VkFramebuffer    GetFramebuffer(u32 index);
+    static VkRenderPass     GetRenderPass();
+
+    static u32  AcquireNextImage(VkSemaphore signalSemaphore);
+    static void Present(u32 imageIndex, VkSemaphore waitSemaphore);
+
+private:
+    static SwapchainSupportDetails QuerySwapSupport(VkPhysicalDevice device);
+    static VkSurfaceFormatKHR ChooseFormat(const std::vector<VkSurfaceFormatKHR>& formats);
+    static VkPresentModeKHR ChoosePresentMode(const std::vector<VkPresentModeKHR>& modes);
+    static VkExtent2D ChooseExtent(const VkSurfaceCapabilitiesKHR& cap, u32 w, u32 h);
+    static bool CreateImageViews();
+    static bool CreateRenderPass();
+    static bool CreateFramebuffers();
+    static bool CreateDepthResources();
 };
 
 // ── Vulkan Pipeline ────────────────────────────────────────
 
 struct VulkanPipelineConfig {
-    const char* VertexShaderPath   = nullptr;
-    const char* FragmentShaderPath = nullptr;
-    bool        DepthTest          = true;
-    bool        Blending           = false;
-    // 扩展: 顶点输入布局、推送常量等
+    std::vector<u8> VertexShaderSPIRV;
+    std::vector<u8> FragmentShaderSPIRV;
+    bool DepthTest = true;
+    bool Blending  = false;
+    VkRenderPass RenderPass = VK_NULL_HANDLE;
 };
 
 class VulkanPipeline {
 public:
-    static void* Create(const VulkanPipelineConfig& config);
-    static void  Destroy(void* pipeline);
+    static VkPipeline Create(const VulkanPipelineConfig& config, VkPipelineLayout& outLayout);
+    static void Destroy(VkPipeline pipeline, VkPipelineLayout layout);
+
+private:
+    static VkShaderModule CreateShaderModule(const std::vector<u8>& code);
 };
 
 // ── Vulkan Buffer ──────────────────────────────────────────
 
 enum class VulkanBufferType : u8 {
-    Vertex,
-    Index,
-    Uniform,
-    Storage,
-    Staging
+    Vertex, Index, Uniform, Storage, Staging
 };
 
 class VulkanBuffer {
 public:
-    static void* Create(VulkanBufferType type, u64 size, const void* data = nullptr);
-    static void  Destroy(void* buffer);
-    static void  Upload(void* buffer, const void* data, u64 size, u64 offset = 0);
-    static void* Map(void* buffer);
-    static void  Unmap(void* buffer);
+    static void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                             VkMemoryPropertyFlags properties,
+                             VkBuffer& buffer, VkDeviceMemory& memory);
+    static void DestroyBuffer(VkBuffer buffer, VkDeviceMemory memory);
+    static void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
 };
 
 // ── Vulkan Command ─────────────────────────────────────────
 
 class VulkanCommand {
 public:
-    static void* AllocateCommandBuffer();
-    static void  FreeCommandBuffer(void* cmdBuffer);
-    static void  Begin(void* cmdBuffer);
-    static void  End(void* cmdBuffer);
-    static void  Submit(void* cmdBuffer, bool waitIdle = false);
+    static VkCommandBuffer BeginSingleTime();
+    static void EndSingleTime(VkCommandBuffer cmdBuffer);
+    static std::vector<VkCommandBuffer> AllocateCommandBuffers(u32 count);
+    static void FreeCommandBuffers(const std::vector<VkCommandBuffer>& buffers);
 };
 
-// ── Vulkan Shader (SPIR-V) ─────────────────────────────────
+// ── Vulkan Renderer (帧循环) ───────────────────────────────
 
-class VulkanShader {
+class VulkanRenderer {
 public:
-    static void* LoadFromSPIRV(const char* vertPath, const char* fragPath);
-    static void* LoadFromGLSL(const char* vertSrc, const char* fragSrc);
-    static void  Destroy(void* shaderModule);
-};
+    static bool Init(const VulkanContextConfig& config);
+    static void Shutdown();
+    static void BeginFrame();
+    static void EndFrame();
+    static bool ShouldRecreateSwapchain();
+    static void OnResize(u32 width, u32 height);
 
-// ── Vulkan Swapchain ───────────────────────────────────────
+    static VkCommandBuffer GetCurrentCommandBuffer();
+    static u32 GetCurrentFrameIndex();
 
-class VulkanSwapchain {
-public:
-    static bool Create(u32 width, u32 height);
-    static void Destroy();
-    static void Resize(u32 width, u32 height);
-    static u32  AcquireNextImage();
-    static void Present();
-    static u32  GetImageCount();
+private:
+    static bool CreateSyncObjects();
 };
 
 #else // !ENGINE_ENABLE_VULKAN
 
-// 无 Vulkan 时的空占位
+// ── 无 Vulkan 时的空占位 ───────────────────────────────────
+
+namespace Engine {
+
 class VulkanContext {
 public:
     static bool Init(const void*) {
@@ -121,6 +169,14 @@ public:
     }
     static void Shutdown() {}
     static bool IsInitialized() { return false; }
+};
+
+class VulkanRenderer {
+public:
+    static bool Init(const void*) { return false; }
+    static void Shutdown() {}
+    static void BeginFrame() {}
+    static void EndFrame() {}
 };
 
 #endif // ENGINE_ENABLE_VULKAN
