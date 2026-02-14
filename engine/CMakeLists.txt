@@ -42,6 +42,52 @@ if(ENGINE_ENABLE_VULKAN)
     else()
         message(WARNING "Vulkan SDK not found, Vulkan backend disabled")
     endif()
+    # ── SPIR-V 着色器编译 ─────────────────────────────────
+    if(Vulkan_FOUND)
+        # 查找 glslc (Vulkan SDK 或 MSYS2)
+        find_program(GLSLC glslc HINTS
+            "$ENV{VULKAN_SDK}/Bin"
+            "C:/msys64/mingw64/bin"
+            "C:/VulkanSDK/*/Bin"
+        )
+        if(NOT GLSLC)
+            find_program(GLSLC glslangValidator HINTS
+                "$ENV{VULKAN_SDK}/Bin"
+                "C:/msys64/mingw64/bin"
+            )
+        endif()
+
+        if(GLSLC)
+            message(STATUS "Found shader compiler: ${GLSLC}")
+
+            set(VK_SHADER_DIR "${CMAKE_SOURCE_DIR}/sandbox/assets/shaders/vulkan")
+            file(GLOB VK_SHADER_SOURCES
+                "${VK_SHADER_DIR}/*.vert"
+                "${VK_SHADER_DIR}/*.frag"
+                "${VK_SHADER_DIR}/*.comp"
+            )
+
+            set(VK_SPV_OUTPUTS "")
+            foreach(SHADER ${VK_SHADER_SOURCES})
+                get_filename_component(SHADER_NAME ${SHADER} NAME)
+                set(SPV_OUTPUT "${VK_SHADER_DIR}/${SHADER_NAME}.spv")
+                add_custom_command(
+                    OUTPUT ${SPV_OUTPUT}
+                    COMMAND ${GLSLC} -o ${SPV_OUTPUT} ${SHADER}
+                    DEPENDS ${SHADER}
+                    COMMENT "Compiling SPIR-V: ${SHADER_NAME}"
+                )
+                list(APPEND VK_SPV_OUTPUTS ${SPV_OUTPUT})
+            endforeach()
+
+            if(VK_SPV_OUTPUTS)
+                add_custom_target(VulkanShaders ALL DEPENDS ${VK_SPV_OUTPUTS})
+                add_dependencies(Engine VulkanShaders)
+            endif()
+        else()
+            message(WARNING "glslc/glslangValidator not found, Vulkan shaders will not be compiled")
+        endif()
+    endif()
 else()
     message(STATUS "Vulkan backend disabled (use -DENGINE_ENABLE_VULKAN=ON to enable)")
 endif()

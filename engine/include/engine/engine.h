@@ -24,6 +24,9 @@
 #include "engine/platform/window.h"
 #include "engine/platform/input.h"
 
+// RHI (Rendering Hardware Interface)
+#include "engine/rhi/rhi.h"
+
 // Renderer
 #include "engine/renderer/renderer.h"
 #include "engine/renderer/shader.h"

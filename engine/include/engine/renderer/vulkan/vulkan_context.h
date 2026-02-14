@@ -143,6 +143,7 @@ class VulkanRenderer {
 public:
     static bool Init(const VulkanContextConfig& config);
     static void Shutdown();
+    static void SetClearColor(f32 r, f32 g, f32 b, f32 a = 1.0f);
     static void BeginFrame();
     static void EndFrame();
     static bool ShouldRecreateSwapchain();

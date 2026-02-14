@@ -1,16 +1,13 @@
-#include "engine/renderer/shader.h"
+#include "engine/rhi/opengl/gl_shader.h"
 #include "engine/core/log.h"
-
-#include <glad/glad.h>
 
 namespace Engine {
 
-Shader::Shader(const std::string& vertexSrc, const std::string& fragmentSrc) {
+GLShader::GLShader(const std::string& vertexSrc, const std::string& fragmentSrc) {
     u32 vertShader = CompileShader(GL_VERTEX_SHADER, vertexSrc);
     u32 fragShader = CompileShader(GL_FRAGMENT_SHADER, fragmentSrc);
 
     if (vertShader == 0 || fragShader == 0) {
-        // 编译失败，清理并标记无效
         if (vertShader) glDeleteShader(vertShader);
         if (fragShader) glDeleteShader(fragShader);
         m_Valid = false;
@@ -27,12 +24,12 @@ Shader::Shader(const std::string& vertexSrc, const std::string& fragmentSrc) {
     if (!success) {
         char infoLog[512];
         glGetProgramInfoLog(m_ID, 512, nullptr, infoLog);
-        LOG_ERROR("Shader 程序链接失败: %s", infoLog);
+        LOG_ERROR("[GLShader] 程序链接失败: %s", infoLog);
         glDeleteProgram(m_ID);
         m_ID = 0;
         m_Valid = false;
     } else {
-        LOG_DEBUG("Shader 程序 %u 链接成功", m_ID);
+        LOG_DEBUG("[GLShader] 程序 %u 链接成功", m_ID);
         m_Valid = true;
     }
 
@@ -40,22 +37,20 @@ Shader::Shader(const std::string& vertexSrc, const std::string& fragmentSrc) {
     glDeleteShader(fragShader);
 }
 
-Shader::~Shader() {
-    if (m_ID) {
-        glDeleteProgram(m_ID);
-    }
+GLShader::~GLShader() {
+    if (m_ID) glDeleteProgram(m_ID);
 }
 
-void Shader::Bind() const {
+void GLShader::Bind() const {
     if (!m_Valid) return;
     glUseProgram(m_ID);
 }
 
-void Shader::Unbind() const {
+void GLShader::Unbind() const {
     glUseProgram(0);
 }
 
-u32 Shader::CompileShader(u32 type, const std::string& source) {
+u32 GLShader::CompileShader(u32 type, const std::string& source) {
     u32 shader = glCreateShader(type);
     const char* src = source.c_str();
     glShaderSource(shader, 1, &src, nullptr);
@@ -67,15 +62,14 @@ u32 Shader::CompileShader(u32 type, const std::string& source) {
         char infoLog[512];
         glGetShaderInfoLog(shader, 512, nullptr, infoLog);
         const char* typeStr = (type == GL_VERTEX_SHADER) ? "顶点" : "片段";
-        LOG_ERROR("%s着色器编译失败: %s", typeStr, infoLog);
+        LOG_ERROR("[GLShader] %s着色器编译失败: %s", typeStr, infoLog);
         glDeleteShader(shader);
         return 0;
     }
-
     return shader;
 }
 
-i32 Shader::GetUniformLocation(const std::string& name) {
+i32 GLShader::GetUniformLocation(const std::string& name) {
     if (!m_Valid) return -1;
     auto it = m_UniformCache.find(name);
     if (it != m_UniformCache.end()) return it->second;
@@ -85,39 +79,32 @@ i32 Shader::GetUniformLocation(const std::string& name) {
     return loc;
 }
 
-void Shader::SetInt(const std::string& name, i32 value) {
-    i32 loc = GetUniformLocation(name);
-    if (loc != -1) glUniform1i(loc, value);
+void GLShader::SetInt(const std::string& name, i32 value) {
+    glUniform1i(GetUniformLocation(name), value);
 }
 
-void Shader::SetFloat(const std::string& name, f32 value) {
-    i32 loc = GetUniformLocation(name);
-    if (loc != -1) glUniform1f(loc, value);
+void GLShader::SetFloat(const std::string& name, f32 value) {
+    glUniform1f(GetUniformLocation(name), value);
 }
 
-void Shader::SetVec2(const std::string& name, f32 x, f32 y) {
-    i32 loc = GetUniformLocation(name);
-    if (loc != -1) glUniform2f(loc, x, y);
+void GLShader::SetVec2(const std::string& name, f32 x, f32 y) {
+    glUniform2f(GetUniformLocation(name), x, y);
 }
 
-void Shader::SetVec3(const std::string& name, f32 x, f32 y, f32 z) {
-    i32 loc = GetUniformLocation(name);
-    if (loc != -1) glUniform3f(loc, x, y, z);
+void GLShader::SetVec3(const std::string& name, f32 x, f32 y, f32 z) {
+    glUniform3f(GetUniformLocation(name), x, y, z);
 }
 
-void Shader::SetVec4(const std::string& name, f32 x, f32 y, f32 z, f32 w) {
-    i32 loc = GetUniformLocation(name);
-    if (loc != -1) glUniform4f(loc, x, y, z, w);
+void GLShader::SetVec4(const std::string& name, f32 x, f32 y, f32 z, f32 w) {
+    glUniform4f(GetUniformLocation(name), x, y, z, w);
 }
 
-void Shader::SetMat4(const std::string& name, const f32* value) {
-    i32 loc = GetUniformLocation(name);
-    if (loc != -1) glUniformMatrix4fv(loc, 1, GL_FALSE, value);
+void GLShader::SetMat3(const std::string& name, const f32* value) {
+    glUniformMatrix3fv(GetUniformLocation(name), 1, GL_FALSE, value);
 }
 
-void Shader::SetMat3(const std::string& name, const f32* value) {
-    i32 loc = GetUniformLocation(name);
-    if (loc != -1) glUniformMatrix3fv(loc, 1, GL_FALSE, value);
+void GLShader::SetMat4(const std::string& name, const f32* value) {
+    glUniformMatrix4fv(GetUniformLocation(name), 1, GL_FALSE, value);
 }
 
 } // namespace Engine

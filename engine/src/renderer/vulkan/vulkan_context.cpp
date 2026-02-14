@@ -1,13 +1,13 @@
 #include "engine/renderer/vulkan/vulkan_context.h"
 
-namespace Engine {
-
 #ifdef ENGINE_ENABLE_VULKAN
 
 #include <GLFW/glfw3.h>
 #include <cstring>
 #include <set>
 #include <algorithm>
+
+namespace Engine {
 
 // ═══════════════════════════════════════════════════════════
 //  静态成员
@@ -623,7 +623,15 @@ bool VulkanSwapchain::CreateFramebuffers() {
 
 u32 VulkanSwapchain::AcquireNextImage(VkSemaphore signalSemaphore) {
     u32 imageIndex = 0;
-    vkAcquireNextImageKHR(s_Device, s_Swapchain, UINT64_MAX, signalSemaphore, VK_NULL_HANDLE, &imageIndex);
+    VkResult result = vkAcquireNextImageKHR(s_Device, s_Swapchain, UINT64_MAX, signalSemaphore, VK_NULL_HANDLE, &imageIndex);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        s_NeedResize = true;
+        return UINT32_MAX; // 无效索引，调用方需检查
+    }
+    if (result == VK_SUBOPTIMAL_KHR) {
+        s_NeedResize = true;
+        // 仍可继续使用当前帧
+    }
     return imageIndex;
 }
 
@@ -896,11 +904,22 @@ void VulkanRenderer::Shutdown() {
     VulkanContext::Shutdown();
 }
 
+// ── 全局 Clear Color ─────────────────────────────────────────
+static f32 s_ClearR = 0.01f, s_ClearG = 0.01f, s_ClearB = 0.02f, s_ClearA = 1.0f;
+
+void VulkanRenderer::SetClearColor(f32 r, f32 g, f32 b, f32 a) {
+    s_ClearR = r; s_ClearG = g; s_ClearB = b; s_ClearA = a;
+}
+
 void VulkanRenderer::BeginFrame() {
     vkWaitForFences(s_Device, 1, &s_InFlightFences[s_CurrentFrame], VK_TRUE, UINT64_MAX);
     vkResetFences(s_Device, 1, &s_InFlightFences[s_CurrentFrame]);
 
     s_CurrentImage = VulkanSwapchain::AcquireNextImage(s_ImageAvailable[s_CurrentFrame]);
+    if (s_CurrentImage == UINT32_MAX) {
+        // swapchain 失效，跳过本帧
+        return;
+    }
 
     VkCommandBuffer cmd = s_CommandBuffers[s_CurrentFrame];
     vkResetCommandBuffer(cmd, 0);
@@ -910,7 +929,7 @@ void VulkanRenderer::BeginFrame() {
     vkBeginCommandBuffer(cmd, &beginInfo);
 
     VkClearValue clearValues[2] = {};
-    clearValues[0].color = {{0.01f, 0.01f, 0.02f, 1.0f}};
+    clearValues[0].color = {{s_ClearR, s_ClearG, s_ClearB, s_ClearA}};
     clearValues[1].depthStencil = {1.0f, 0};
 
     VkRenderPassBeginInfo rpInfo = {};
@@ -965,6 +984,12 @@ void VulkanRenderer::EndFrame() {
 bool VulkanRenderer::ShouldRecreateSwapchain() { return s_NeedResize; }
 
 void VulkanRenderer::OnResize(u32 width, u32 height) {
+    // 窗口最小化时 extent 为 (0,0)，跳过 Recreate 等待恢复
+    if (width == 0 || height == 0) {
+        LOG_DEBUG("[Vulkan] 窗口最小化，跳过 Swapchain 重建");
+        return;
+    }
+    vkDeviceWaitIdle(VulkanContext::GetDevice());
     VulkanSwapchain::Recreate(width, height);
     s_NeedResize = false;
 }
@@ -972,6 +997,6 @@ void VulkanRenderer::OnResize(u32 width, u32 height) {
 VkCommandBuffer VulkanRenderer::GetCurrentCommandBuffer() { return s_CommandBuffers[s_CurrentFrame]; }
 u32 VulkanRenderer::GetCurrentFrameIndex() { return s_CurrentFrame; }
 
-#endif // ENGINE_ENABLE_VULKAN
-
 } // namespace Engine
+
+#endif // ENGINE_ENABLE_VULKAN

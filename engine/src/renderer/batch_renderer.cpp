@@ -144,10 +144,11 @@ void BatchRenderer::End() {
                                   (void*)(offsetof(BatchInstanceData, MaterialParams)));
             glVertexAttribDivisor(BASE + 6, 1);
 
-            // 实例化绘制 (仅使用 glDrawArraysInstanced)
-            glDrawArraysInstanced(GL_TRIANGLES, 0,
-                                  mesh->GetVertexCount(),
-                                  (GLsizei)batchSize);
+            // 实例化绘制 (使用索引缓冲)
+            glDrawElementsInstanced(GL_TRIANGLES,
+                                    mesh->GetIndexCount(),
+                                    GL_UNSIGNED_INT, nullptr,
+                                    (GLsizei)batchSize);
 
             // 清理分频器
             for (u32 loc = BASE; loc <= BASE + 6; loc++) {

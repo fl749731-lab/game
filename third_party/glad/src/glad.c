@@ -45,6 +45,7 @@ PFNGLDISABLEVERTEXATTRIBARRAYPROC glad_glDisableVertexAttribArray = 0;
 PFNGLVERTEXATTRIBPOINTERPROC     glad_glVertexAttribPointer = 0;
 PFNGLVERTEXATTRIBDIVISORPROC     glad_glVertexAttribDivisor = 0;
 PFNGLDRAWARRAYSINSTANCEDPROC     glad_glDrawArraysInstanced = 0;
+PFNGLDRAWELEMENTSINSTANCEDPROC   glad_glDrawElementsInstanced = 0;
 
 PFNGLCREATESHADERPROC            glad_glCreateShader = 0;
 PFNGLDELETESHADERPROC            glad_glDeleteShader = 0;
@@ -147,6 +148,7 @@ int gladLoadGL(GLADloadproc load) {
     GLAD_LOAD(glad_glVertexAttribPointer,      "glVertexAttribPointer");
     GLAD_LOAD(glad_glVertexAttribDivisor,      "glVertexAttribDivisor");
     GLAD_LOAD(glad_glDrawArraysInstanced,      "glDrawArraysInstanced");
+    GLAD_LOAD(glad_glDrawElementsInstanced,    "glDrawElementsInstanced");
 
     GLAD_LOAD(glad_glCreateShader,          "glCreateShader");
     GLAD_LOAD(glad_glDeleteShader,          "glDeleteShader");

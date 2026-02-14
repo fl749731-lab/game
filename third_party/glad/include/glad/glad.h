@@ -276,6 +276,7 @@ typedef void   (APIENTRY *PFNGLVERTEXATTRIBDIVISORPROC)(GLuint, GLuint);
 
 /* Instanced rendering (GL 3.1+) */
 typedef void   (APIENTRY *PFNGLDRAWARRAYSINSTANCEDPROC)(GLenum, GLint, GLsizei, GLsizei);
+typedef void   (APIENTRY *PFNGLDRAWELEMENTSINSTANCEDPROC)(GLenum, GLsizei, GLenum, const void*, GLsizei);
 
 /* Shaders (GL 2.0+) */
 typedef GLuint (APIENTRY *PFNGLCREATESHADERPROC)(GLenum);
@@ -382,6 +383,7 @@ extern PFNGLVERTEXATTRIBPOINTERPROC     glad_glVertexAttribPointer;
 extern PFNGLVERTEXATTRIBDIVISORPROC     glad_glVertexAttribDivisor;
 
 extern PFNGLDRAWARRAYSINSTANCEDPROC     glad_glDrawArraysInstanced;
+extern PFNGLDRAWELEMENTSINSTANCEDPROC   glad_glDrawElementsInstanced;
 
 extern PFNGLCREATESHADERPROC            glad_glCreateShader;
 extern PFNGLDELETESHADERPROC            glad_glDeleteShader;
@@ -473,6 +475,7 @@ extern PFNGLDEBUGMESSAGECALLBACKPROC   glad_glDebugMessageCallback;
 #define glVertexAttribPointer   glad_glVertexAttribPointer
 #define glVertexAttribDivisor   glad_glVertexAttribDivisor
 #define glDrawArraysInstanced   glad_glDrawArraysInstanced
+#define glDrawElementsInstanced glad_glDrawElementsInstanced
 #define glCreateShader          glad_glCreateShader
 #define glDeleteShader          glad_glDeleteShader
 #define glShaderSource          glad_glShaderSource
