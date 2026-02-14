@@ -385,4 +385,41 @@ void Gizmo::RenderToolbar() {
     ImGui::Text("吸附: %s", s_Snap.Enabled ? "ON" : "OFF (Ctrl)");
 }
 
+// ── 多选变换 ────────────────────────────────────────────────
+
+void Gizmo::BeginMulti(const std::vector<glm::vec3>& positions) {
+    s_MultiPositions = positions;
+    s_MultiInitPositions = positions;
+
+    // 计算质心
+    s_Centroid = glm::vec3(0);
+    for (auto& p : positions) s_Centroid += p;
+    if (!positions.empty()) s_Centroid /= (f32)positions.size();
+
+    // 用质心作为 Gizmo 位置
+    Begin(s_Centroid, {0,0,0}, {1,1,1});
+}
+
+bool Gizmo::UpdateMulti(const glm::mat4& viewMatrix, const glm::mat4& projMatrix,
+                         f32 viewportW, f32 viewportH,
+                         f32 mouseX, f32 mouseY, bool mouseDown, bool ctrlDown) {
+    bool dragging = Update(viewMatrix, projMatrix, viewportW, viewportH,
+                           mouseX, mouseY, mouseDown, ctrlDown);
+
+    if (dragging) {
+        // 计算质心偏移量，应用到所有实体
+        glm::vec3 delta = s_Position - s_InitPosition;
+        for (size_t i = 0; i < s_MultiPositions.size(); i++) {
+            s_MultiPositions[i] = s_MultiInitPositions[i] + delta;
+        }
+        s_Centroid = s_Position;
+    }
+
+    return dragging;
+}
+
+std::vector<glm::vec3> Gizmo::GetResultPositions() {
+    return s_MultiPositions;
+}
+
 } // namespace Engine

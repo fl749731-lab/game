@@ -134,6 +134,22 @@ public:
     void SelectAll();
     std::vector<u32> GetSelectedNodeIDs() const;
 
+    // ── 撤销重做 (Ctrl+Z/Y) ──────────────────────
+    void Undo();
+    void Redo();
+
+    // ── 复制粘贴 (Ctrl+C/V/X) ──────────────────
+    void CopySelected();
+    void PasteClipboard(ImVec2 pos = {0,0});
+    void CutSelected();
+    void DeleteSelected();
+
+    // ── 对齐工具 ──────────────────────────────────
+    void AlignSelectedHorizontal();
+    void AlignSelectedVertical();
+    void DistributeSelectedHorizontal();
+    void DistributeSelectedVertical();
+
     // ── 渲染 ──────────────────────────────────────
     void Render(const char* title);
 
@@ -206,6 +222,24 @@ private:
 
     // 流动动画时间
     float m_FlowAnimTime = 0;
+
+    // ── 撤销重做 Command ──────────────────────
+    struct UndoCommand {
+        enum Type { AddNode, RemoveNode, AddLink, RemoveLink, MoveNodes };
+        Type CmdType;
+        // 快照数据 (JSON-like, 简化用 vectors)
+        std::vector<Node> SnapshotNodes;
+        std::vector<Link> SnapshotLinks;
+    };
+
+    std::vector<UndoCommand> m_UndoStack;
+    std::vector<UndoCommand> m_RedoStack;
+    static constexpr u32 MAX_UNDO = 50;
+
+    void PushUndo(UndoCommand::Type type);
+
+    // ── 剪贴板 ────────────────────────────
+    std::vector<Node> m_Clipboard;
 };
 
 } // namespace Engine

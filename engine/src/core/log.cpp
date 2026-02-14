@@ -13,6 +13,7 @@
 namespace Engine {
 
 LogLevel Logger::s_Level = LogLevel::Trace;
+LogCallback Logger::s_Callback = nullptr;
 static std::mutex s_LogMutex;
 
 void Logger::Init() {
@@ -56,28 +57,36 @@ void Logger::ResetConsoleColor() {
     printf("\033[0m");
 }
 
+void Logger::SetCallback(LogCallback callback) {
+    s_Callback = callback;
+}
+
 void Logger::Log(LogLevel level, const char* file, int line, const char* fmt, ...) {
     if (level < s_Level) return;
 
     std::lock_guard<std::mutex> lock(s_LogMutex);
 
+    // 格式化消息
+    char buffer[1024];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+
     time_t now = time(nullptr);
     struct tm* t = localtime(&now);
 
     SetConsoleColor(level);
-    printf("[%02d:%02d:%02d] [%s] ",
+    printf("[%02d:%02d:%02d] [%s] %s\n",
         t->tm_hour, t->tm_min, t->tm_sec,
-        LevelToString(level));
-
-    va_list args;
-    va_start(args, fmt);
-    vprintf(fmt, args);
-    va_end(args);
-
-    printf("\n");
+        LevelToString(level), buffer);
     ResetConsoleColor();
 
-    // 及时刷新: WARN 以上级别
+    // 转发到回调 (Console)
+    if (s_Callback) {
+        s_Callback(level, buffer);
+    }
+
     if (level >= LogLevel::Warn) {
         fflush(stdout);
     }

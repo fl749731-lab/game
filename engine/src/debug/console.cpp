@@ -19,6 +19,16 @@ void Console::Init() {
     memset(s_InputBuffer, 0, sizeof(s_InputBuffer));
 
     RegisterBuiltinCommands();
+
+    // 注册 Logger 回调 — 引擎所有 LOG_INFO/WARN/ERROR 自动输出到控制台
+    Logger::SetCallback([](Engine::LogLevel level, const char* message) {
+        Console::LogLevel consoleLevel = Console::LogLevel::Info;
+        if (level == Engine::LogLevel::Warn)  consoleLevel = Console::LogLevel::Warning;
+        if (level == Engine::LogLevel::Error || level == Engine::LogLevel::Fatal)
+            consoleLevel = Console::LogLevel::Error;
+        Console::Log(message, consoleLevel);
+    });
+
     Log("引擎控制台 v1.0 — 输入 'help' 查看命令列表", LogLevel::Info);
     LOG_INFO("[Console] 初始化");
 }

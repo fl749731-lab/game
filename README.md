@@ -11,8 +11,10 @@
 
 ## ✨ 特性一览
 
+### 渲染
+
 | 特性 | 状态 | 说明 |
-| ------ | :----: | ------ |
+| --- | :---: | --- |
 | 延迟渲染 | ✅ | G-Buffer MRT + 全屏延迟光照 Pass |
 | PBR 材质 | ✅ | Cook-Torrance GGX BRDF (Metallic/Roughness) |
 | SSAO | ✅ | 32 采样半球核 + 4×4 噪声旋转 + 模糊 |
@@ -23,20 +25,55 @@
 | 法线贴图 | ✅ | TBN 矩阵，CPU 预计算 |
 | 粒子系统 | ✅ | GPU Instancing |
 | 程序化天空盒 | ✅ | 三层渐变 + 太阳光晕 |
+| Overdraw 可视化 | ✅ | 片元叠加计数 + 热力图 (黑→蓝→绿→黄→红→白) |
+| 暗角效果 / 视锥剔除 | ✅ | — |
+| Vulkan 后端 | 🔜 | 计划中 |
+
+### 编辑器工具
+
+| 特性 | 状态 | 说明 |
+| --- | :---: | --- |
+| 场景编辑器 | ✅ | ImGui 集成，多面板布局 |
+| 层级面板 | ✅ | 场景树 + 拖拽排序 + 搜索过滤 |
+| 检查器面板 | ✅ | 8 组件属性 Inspector (Transform/Light/Material...) |
+| 节点图编辑器 | ✅ | 通用可视化节点图 (拖拽/连线/撤销/分类菜单) |
+| 材质编辑器 | ✅ | 基于节点图的可视化材质编辑 + 预览 |
+| 粒子编辑器 | ✅ | 实时粒子预览 + 4 种预设 + 参数调节 |
+| 时间线编辑器 | ✅ | 多轨时间线 + 关键帧菱形标记 + 缩放/平移 |
+| 曲线编辑器 | ✅ | Hermite 样条曲线 + 关键帧编辑 |
+| 颜色拾取器 | ✅ | HSV 色轮 + HDR + 渐变编辑 + 吸管工具 + 收藏夹 |
+| 资源浏览器 | ✅ | 文件系统浏览 + 图标网格/列表视图 |
+| Gizmo | ✅ | 平移/旋转/缩放 3D Gizmo |
+| 拖放系统 | ✅ | 跨面板拖拽 (实体/资源/颜色) |
+| 热重载 | ✅ | 文件监控 + Shader/脚本自动重载 |
+| Docking 布局 | ✅ | 多面板布局管理 |
+| 截图系统 | ✅ | 帧缓冲截图 + 序列帧录制 |
+| Prefab 系统 | ✅ | 预制件保存/实例化 |
+
+### 核心引擎
+
+| 特性 | 状态 | 说明 |
+| --- | :---: | --- |
 | ECS 架构 | ✅ | Entity-Component-System |
-| AABB 物理 | ✅ | 碰撞检测 + 射线检测 + Sphere 碰撞 |
-| 场景编辑器 | ✅ | ImGui 集成 (8 组件 Inspector + Performance) |
+| AABB 物理 | ✅ | 碰撞检测 + 射线检测 + BVH 加速 |
 | 脚本逻辑层 | ✅ | ScriptSystem + EngineAPI (30+ Python 接口) |
 | Python AI | ✅ | pybind11 桥接 (巡逻/追击/防御) |
 | 层级指挥链 AI | ✅ | 指挥官→小队长→士兵 三层决策 + 玩家意图记忆 |
-| 音频系统 | ✅ | miniaudio (3D 空间音频) |
-| glTF 加载 | ✅ | cgltf |
-| OBJ 加载 | ✅ | 含切线计算 |
-| 视锥剔除 | ✅ | — |
-| 暗角效果 | ✅ | — |
+| 音频系统 | ✅ | miniaudio (3D 空间音频 + 混音器) |
+| glTF / OBJ 加载 | ✅ | cgltf + 自定义 OBJ (含切线计算) |
 | 多线程 JobSystem | ✅ | 线程池 + ParallelFor (物理/ECS 并行) |
 | 异步资源加载 | ✅ | AsyncLoader: 后台解码 → 主线程 GPU 上传 |
-| Vulkan 后端 | 🔜 | 计划中 |
+
+### 调试与性能
+
+| 特性 | 状态 | 说明 |
+| --- | :---: | --- |
+| DebugDraw | ✅ | 线段/AABB/球体/射线/网格/坐标轴 |
+| GPU Profiler | ✅ | Timer Query 计时 + ImGui 可视化 |
+| 性能图表 | ✅ | 实时帧率/内存/系统曲线图 |
+| 统计系统 | ✅ | Draw Call/Triangle/Entity 计数 |
+| 控制台 | ✅ | 命令行控制台 + 日志过滤 |
+| 引擎诊断 | ✅ | GL 上下文 / 内存 / 系统信息 |
 
 ## 架构
 
@@ -68,6 +105,7 @@ Pass 3: 延迟 PBR 光照     → G-Buffer + 阴影 + AO → HDR FBO
 Pass 4: SSR              → 视图空间 Ray Marching → 反射混合
 Pass 5: 前向叠加          → 天空盒 / 透明物 / 自发光 / 粒子 / 调试线
 Pass 6: Bloom + 后处理    → 亮度提取 → 高斯模糊 → Reinhard 色调映射 → 屏幕
+Pass *: Overdraw 可视化   → 片元叠加计数 → 热力图覆盖 (可选)
 ```
 
 ### 资源管理
@@ -144,7 +182,7 @@ cmake --build build
 ### 构建选项
 
 | 选项 | 默认 | 说明 |
-|------|:----:|------|
+| --- | :---: | --- |
 | `BUILD_TESTS` | OFF | 构建单元测试 (Google Test) |
 | `ENGINE_ENABLE_PYTHON` | OFF | 启用 Python AI 层 |
 
@@ -157,7 +195,7 @@ cd build && ctest --output-on-failure
 
 ## 引擎功能详解
 
-### 渲染
+### 渲染管线详情
 
 - **延迟渲染管线** (G-Buffer MRT + 全屏延迟 PBR 光照)
 - **PBR 材质** (Cook-Torrance GGX BRDF, Metallic/Roughness 工作流)
@@ -170,29 +208,56 @@ cd build && ctest --output-on-failure
 - 法线贴图 (TBN 矩阵，CPU 预计算法线矩阵)
 - 粒子系统 (GPU Instancing)
 - 程序化天空盒 (三层渐变 + 太阳光晕)
+- **Overdraw 可视化** (片元叠加计数 + 六段热力图)
 - 暗角效果 / 视锥剔除
+- Sprite 批渲染 / 字体渲染
 
-### 核心
+### 编辑器工具详情
 
-- Entity-Component-System (ECS) / 场景管理器
+- **节点图编辑器** — 通用节点图框架 (拖拽/连线/撤销重做/复制粘贴/对齐)
+- **材质编辑器** — 基于节点图的可视化材质编辑 (11 种预置节点)
+- **粒子编辑器** — 发射/形状/大小颜色/力/渲染 分区调节 + 4 种预设 + 实时预览
+- **时间线编辑器** — 多轨道 + 关键帧 + 播放/暂停/循环 + 缩放/平移
+- **曲线编辑器** — Hermite 样条关键帧曲线
+- **颜色拾取器** — HSV 色轮 + HDR + 渐变编辑器 + 吸管 + 最近使用/收藏
+- **层级面板** — 场景树拖拽排序 + 搜索过滤
+- **检查器面板** — 多组件属性编辑器 (Transform/Light/Material/Physics...)
+- **资源浏览器** — 文件系统浏览 + 网格/列表视图 + 搜索
+- **Gizmo** — 平移/旋转/缩放 3D 操控器
+- **拖放系统** — 跨面板拖拽 (实体/资源/颜色)
+- **热重载** — 文件监控 + Shader/脚本自动重载
+- **Docking 布局** — 多面板窗口布局管理
+- **截图系统** — 帧缓冲截图 (PNG) + 序列帧录制
+- **Prefab 系统** — 预制件保存与实例化
+
+### 核心系统详情
+
+- Entity-Component-System (ECS) / 场景管理器 / 场景序列化
 - 脚本逻辑层 (ScriptSystem + EngineAPI, 30+ Python 接口)
 - 层级指挥链 AI (Commander → Squad Leader → Soldier, 玩家意图记忆)
 - 统一资源管理 (Shader/Texture/Mesh 缓存 + 异步加载)
 - 多线程任务系统 (JobSystem 线程池 + AsyncLoader 异步资源)
 - 事件系统 (EventBus + 碰撞/生命周期/场景事件)
+- 自定义内存分配器 (线性/池/栈分配器)
 - FPS 相机控制器
 
-### 物理
+### 物理系统详情
 
 - AABB 碰撞检测 (含穿透方向+深度)
 - 射线检测 (Ray vs AABB / Plane)
+- BVH 加速结构
 - 刚体组件 + 碰撞回调
 
-### 调试
+### 调试与分析详情
 
 - DebugDraw (线段/AABB/球体/射线/网格/坐标轴)
 - DebugUI (屏幕文本叠加)
 - Profiler (代码段计时 + 历史曲线)
+- **GPU Profiler** (Timer Query 精准计时 + ImGui 可视化)
+- **性能图表** (实时帧率/Draw Call/内存曲线)
+- **统计系统** (Draw Call / Triangle / Entity 实时计数)
+- **控制台** (命令行输入 + 日志级别过滤)
+- **引擎诊断** (GL 上下文 / 驱动信息 / 内存概况)
 
 ## 贡献
 

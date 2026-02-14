@@ -748,9 +748,179 @@ void NodeGraphEditor::HandleInput() {
 
     // Delete 键删除选中
     if (ImGui::IsKeyPressed(ImGuiKey_Delete)) {
-        auto selected = GetSelectedNodeIDs();
-        for (u32 id : selected) RemoveNode(id);
+        DeleteSelected();
     }
+
+    // Ctrl 快捷键
+    if (io.KeyCtrl) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Z)) Undo();
+        if (ImGui::IsKeyPressed(ImGuiKey_Y)) Redo();
+        if (ImGui::IsKeyPressed(ImGuiKey_C)) CopySelected();
+        if (ImGui::IsKeyPressed(ImGuiKey_V)) PasteClipboard(ToCanvas(io.MousePos));
+        if (ImGui::IsKeyPressed(ImGuiKey_X)) CutSelected();
+        if (ImGui::IsKeyPressed(ImGuiKey_A)) SelectAll();
+    }
+}
+
+// ── 撤销重做 ────────────────────────────────────────────────
+
+void NodeGraphEditor::PushUndo(UndoCommand::Type type) {
+    UndoCommand cmd;
+    cmd.CmdType = type;
+    cmd.SnapshotNodes = m_Nodes;
+    cmd.SnapshotLinks = m_Links;
+    m_UndoStack.push_back(cmd);
+    if (m_UndoStack.size() > MAX_UNDO)
+        m_UndoStack.erase(m_UndoStack.begin());
+    m_RedoStack.clear();
+}
+
+void NodeGraphEditor::Undo() {
+    if (m_UndoStack.empty()) return;
+    UndoCommand cmd;
+    cmd.CmdType = UndoCommand::MoveNodes;
+    cmd.SnapshotNodes = m_Nodes;
+    cmd.SnapshotLinks = m_Links;
+    m_RedoStack.push_back(cmd);
+
+    auto& last = m_UndoStack.back();
+    m_Nodes = last.SnapshotNodes;
+    m_Links = last.SnapshotLinks;
+    m_UndoStack.pop_back();
+}
+
+void NodeGraphEditor::Redo() {
+    if (m_RedoStack.empty()) return;
+    UndoCommand cmd;
+    cmd.CmdType = UndoCommand::MoveNodes;
+    cmd.SnapshotNodes = m_Nodes;
+    cmd.SnapshotLinks = m_Links;
+    m_UndoStack.push_back(cmd);
+
+    auto& last = m_RedoStack.back();
+    m_Nodes = last.SnapshotNodes;
+    m_Links = last.SnapshotLinks;
+    m_RedoStack.pop_back();
+}
+
+// ── 复制粘贴 ────────────────────────────────────────────────
+
+void NodeGraphEditor::CopySelected() {
+    m_Clipboard.clear();
+    for (auto& n : m_Nodes) {
+        if (n.Selected) m_Clipboard.push_back(n);
+    }
+}
+
+void NodeGraphEditor::PasteClipboard(ImVec2 pos) {
+    if (m_Clipboard.empty()) return;
+    PushUndo(UndoCommand::AddNode);
+
+    // 计算剪贴板质心
+    ImVec2 center = {0, 0};
+    for (auto& n : m_Clipboard) {
+        center.x += n.Pos.x; center.y += n.Pos.y;
+    }
+    center.x /= (float)m_Clipboard.size();
+    center.y /= (float)m_Clipboard.size();
+
+    DeselectAll();
+    for (auto& src : m_Clipboard) {
+        Node n = src;
+        n.ID = m_NextID++;
+        n.Pos.x = pos.x + (src.Pos.x - center.x);
+        n.Pos.y = pos.y + (src.Pos.y - center.y);
+        n.Selected = true;
+        // 重新分配 Pin ID
+        for (auto& p : n.Inputs) p.ID = m_NextID++;
+        for (auto& p : n.Outputs) p.ID = m_NextID++;
+        m_Nodes.push_back(n);
+    }
+}
+
+void NodeGraphEditor::CutSelected() {
+    CopySelected();
+    DeleteSelected();
+}
+
+void NodeGraphEditor::DeleteSelected() {
+    auto ids = GetSelectedNodeIDs();
+    if (ids.empty()) return;
+    PushUndo(UndoCommand::RemoveNode);
+    for (u32 id : ids) RemoveNode(id);
+}
+
+// ── 对齐工具 ────────────────────────────────────────────────
+
+void NodeGraphEditor::AlignSelectedHorizontal() {
+    auto ids = GetSelectedNodeIDs();
+    if (ids.size() < 2) return;
+    PushUndo(UndoCommand::MoveNodes);
+
+    float avgY = 0;
+    for (u32 id : ids) {
+        Node* n = FindNode(id);
+        if (n) avgY += n->Pos.y;
+    }
+    avgY /= (float)ids.size();
+
+    for (u32 id : ids) {
+        Node* n = FindNode(id);
+        if (n) n->Pos.y = avgY;
+    }
+}
+
+void NodeGraphEditor::AlignSelectedVertical() {
+    auto ids = GetSelectedNodeIDs();
+    if (ids.size() < 2) return;
+    PushUndo(UndoCommand::MoveNodes);
+
+    float avgX = 0;
+    for (u32 id : ids) {
+        Node* n = FindNode(id);
+        if (n) avgX += n->Pos.x;
+    }
+    avgX /= (float)ids.size();
+
+    for (u32 id : ids) {
+        Node* n = FindNode(id);
+        if (n) n->Pos.x = avgX;
+    }
+}
+
+void NodeGraphEditor::DistributeSelectedHorizontal() {
+    auto ids = GetSelectedNodeIDs();
+    if (ids.size() < 3) return;
+    PushUndo(UndoCommand::MoveNodes);
+
+    // 按 X 排序
+    std::vector<Node*> nodes;
+    for (u32 id : ids) { Node* n = FindNode(id); if (n) nodes.push_back(n); }
+    std::sort(nodes.begin(), nodes.end(), [](Node* a, Node* b) { return a->Pos.x < b->Pos.x; });
+
+    float minX = nodes.front()->Pos.x;
+    float maxX = nodes.back()->Pos.x;
+    float step = (maxX - minX) / ((float)nodes.size() - 1);
+
+    for (size_t i = 0; i < nodes.size(); i++)
+        nodes[i]->Pos.x = minX + step * (float)i;
+}
+
+void NodeGraphEditor::DistributeSelectedVertical() {
+    auto ids = GetSelectedNodeIDs();
+    if (ids.size() < 3) return;
+    PushUndo(UndoCommand::MoveNodes);
+
+    std::vector<Node*> nodes;
+    for (u32 id : ids) { Node* n = FindNode(id); if (n) nodes.push_back(n); }
+    std::sort(nodes.begin(), nodes.end(), [](Node* a, Node* b) { return a->Pos.y < b->Pos.y; });
+
+    float minY = nodes.front()->Pos.y;
+    float maxY = nodes.back()->Pos.y;
+    float step = (maxY - minY) / ((float)nodes.size() - 1);
+
+    for (size_t i = 0; i < nodes.size(); i++)
+        nodes[i]->Pos.y = minY + step * (float)i;
 }
 
 } // namespace Engine

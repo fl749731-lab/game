@@ -61,10 +61,27 @@
 #include "engine/debug/console.h"
 #include "engine/debug/gpu_profiler.h"
 
+// Renderer (Visualization)
+#include "engine/renderer/overdraw.h"
+
 // Editor
 #include "engine/editor/editor.h"
 #include "engine/editor/gizmo.h"
 #include "engine/editor/node_graph.h"
+#include "engine/editor/scene_view.h"
+#include "engine/editor/asset_browser.h"
+#include "engine/editor/curve_editor.h"
+#include "engine/editor/hierarchy_panel.h"
+#include "engine/editor/inspector_panel.h"
+#include "engine/editor/material_editor.h"
+#include "engine/editor/drag_drop.h"
+#include "engine/editor/docking_layout.h"
+#include "engine/editor/hot_reload.h"
+#include "engine/editor/screen_capture.h"
+#include "engine/editor/prefab_system.h"
+#include "engine/editor/timeline_editor.h"
+#include "engine/editor/particle_editor.h"
+#include "engine/editor/color_picker.h"
 
 // Physics
 #include "engine/physics/collision.h"

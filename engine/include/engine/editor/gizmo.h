@@ -5,6 +5,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <vector>
 
 namespace Engine {
 
@@ -118,6 +119,24 @@ public:
     static GizmoAxis GetActiveAxis();
     static GizmoAxis GetHoveredAxis();
 
+    // ── 多选变换 ────────────────────────────────
+
+    /// 多选开始——输入所有选中实体的位置，内部计算质心
+    static void BeginMulti(const std::vector<glm::vec3>& positions);
+
+    /// 多选更新——返回是否拖拽，内部更新质心
+    static bool UpdateMulti(const glm::mat4& viewMatrix,
+                            const glm::mat4& projMatrix,
+                            f32 viewportW, f32 viewportH,
+                            f32 mouseX, f32 mouseY,
+                            bool mouseDown, bool ctrlDown);
+
+    /// 多选结果——获取每个实体的新位置
+    static std::vector<glm::vec3> GetResultPositions();
+
+    /// 多选质心
+    static glm::vec3 GetCentroid() { return s_Centroid; }
+
 private:
     /// 渲染各模式手柄
     static void RenderTranslateHandles(const glm::vec3& pos, f32 size);
@@ -158,7 +177,12 @@ private:
 
     static constexpr f32 BASE_GIZMO_SIZE = 1.5f;
     static constexpr f32 AXIS_HIT_RADIUS = 0.15f;
-    static constexpr f32 SCREEN_SCALE_FACTOR = 0.1f; // 视点缩放系数
+    static constexpr f32 SCREEN_SCALE_FACTOR = 0.1f;
+
+    // 多选数据
+    inline static std::vector<glm::vec3> s_MultiPositions;
+    inline static std::vector<glm::vec3> s_MultiInitPositions;
+    inline static glm::vec3 s_Centroid = {};
 };
 
 } // namespace Engine
