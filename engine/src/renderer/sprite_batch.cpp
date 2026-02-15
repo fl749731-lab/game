@@ -53,8 +53,25 @@ out vec4 FragColor;
 uniform sampler2D uTextures[16];
 
 void main() {
-    int idx = int(vTexIndex);
-    vec4 texColor = texture(uTextures[idx], vTexCoord);
+    int idx = int(vTexIndex + 0.5);
+    vec4 texColor;
+    // 使用 if-else 链避免动态索引 (兼容 Intel 驱动)
+    if      (idx == 0)  texColor = texture(uTextures[0],  vTexCoord);
+    else if (idx == 1)  texColor = texture(uTextures[1],  vTexCoord);
+    else if (idx == 2)  texColor = texture(uTextures[2],  vTexCoord);
+    else if (idx == 3)  texColor = texture(uTextures[3],  vTexCoord);
+    else if (idx == 4)  texColor = texture(uTextures[4],  vTexCoord);
+    else if (idx == 5)  texColor = texture(uTextures[5],  vTexCoord);
+    else if (idx == 6)  texColor = texture(uTextures[6],  vTexCoord);
+    else if (idx == 7)  texColor = texture(uTextures[7],  vTexCoord);
+    else if (idx == 8)  texColor = texture(uTextures[8],  vTexCoord);
+    else if (idx == 9)  texColor = texture(uTextures[9],  vTexCoord);
+    else if (idx == 10) texColor = texture(uTextures[10], vTexCoord);
+    else if (idx == 11) texColor = texture(uTextures[11], vTexCoord);
+    else if (idx == 12) texColor = texture(uTextures[12], vTexCoord);
+    else if (idx == 13) texColor = texture(uTextures[13], vTexCoord);
+    else if (idx == 14) texColor = texture(uTextures[14], vTexCoord);
+    else                texColor = texture(uTextures[15], vTexCoord);
     FragColor = texColor * vColor;
 }
 )";
@@ -203,11 +220,13 @@ void SpriteBatch::Flush() {
     s_Shader->SetMat4("uProjection", glm::value_ptr(s_Projection));
 
     // 保存当前 GL 状态
-    GLint prevDepthTest, prevBlend;
+    GLint prevDepthTest, prevBlend, prevCullFace;
     glGetIntegerv(GL_DEPTH_TEST, &prevDepthTest);
     glGetIntegerv(GL_BLEND, &prevBlend);
+    glGetIntegerv(GL_CULL_FACE, &prevCullFace);
 
     glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);   // 2D 四边形不需要面剔除
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -217,6 +236,7 @@ void SpriteBatch::Flush() {
 
     // 恢复 GL 状态
     if (prevDepthTest) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    if (prevCullFace) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
     if (!prevBlend) glDisable(GL_BLEND);
 
     s_DrawCalls++;
@@ -228,6 +248,16 @@ void SpriteBatch::Flush() {
 void SpriteBatch::Draw(Ref<Texture2D> texture,
                        const glm::vec2& position,
                        const glm::vec2& size,
+                       f32 rotation,
+                       const glm::vec4& tint) {
+    // 默认 UV: 全图
+    Draw(texture, position, size, {0.0f, 0.0f, 1.0f, 1.0f}, rotation, tint);
+}
+
+void SpriteBatch::Draw(Ref<Texture2D> texture,
+                       const glm::vec2& position,
+                       const glm::vec2& size,
+                       const glm::vec4& uvRect,
                        f32 rotation,
                        const glm::vec4& tint) {
     if (s_QuadCount >= MAX_QUADS) Flush();
@@ -280,8 +310,10 @@ void SpriteBatch::Draw(Ref<Texture2D> texture,
         }
     }
 
-    // UV 坐标
-    glm::vec2 uvs[4] = {{0,0}, {1,0}, {1,1}, {0,1}};
+    // UV 坐标 (从 uvRect 提取子区域)
+    f32 u0 = uvRect.x, v0 = uvRect.y;
+    f32 u1 = uvRect.z, v1 = uvRect.w;
+    glm::vec2 uvs[4] = {{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}};
 
     // 写入 4 个顶点
     for (int i = 0; i < 4; i++) {

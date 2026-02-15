@@ -6,6 +6,10 @@ out/
 # ── 构建日志 / 临时文件 ──────────────────────────────────────
 build_*.txt
 cmake_log.txt
+*.log
+run_log.txt
+stdout.txt
+sizes.txt
 
 # ── CMake 生成物 ─────────────────────────────────────────────
 CMakeCache.txt
@@ -66,3 +70,5 @@ target/
 # ── 杂项 ─────────────────────────────────────────────────────
 .cache/
 compile_commands.json
+*.py
+!ai/**/*.py

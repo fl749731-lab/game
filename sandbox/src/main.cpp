@@ -4,6 +4,7 @@
 // Application: 窗口管理 + 子系统生命周期 + 主循环
 
 #include "engine/engine.h"
+#include "game_layer.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -471,11 +472,12 @@ private:
 
 int main() {
     Engine::Application app({
-        .Title = "Engine v3.0",
+        .Title = "Zombie Survival",
         .Width = 1280,
         .Height = 720
     });
-    app.PushLayer(Engine::CreateScope<SandboxLayer>());
+    // 默认启动丧尸生存原型
+    app.PushLayer(Engine::CreateScope<Engine::GameLayer>());
     app.Run();
     return 0;
 }

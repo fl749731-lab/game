@@ -33,6 +33,14 @@ public:
                      f32 rotation = 0.0f,
                      const glm::vec4& tint = glm::vec4(1.0f));
 
+    /// 绘制纹理图集子区域 (uvRect = {u0, v0, u1, v1})
+    static void Draw(Ref<Texture2D> texture,
+                     const glm::vec2& position,
+                     const glm::vec2& size,
+                     const glm::vec4& uvRect,
+                     f32 rotation,
+                     const glm::vec4& tint = glm::vec4(1.0f));
+
     /// 绘制纯色矩形
     static void DrawRect(const glm::vec2& position,
                          const glm::vec2& size,
