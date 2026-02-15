@@ -1271,20 +1271,29 @@ void GameLayer::RenderLdtkMap() {
         f32 texH = (f32)tex->GetHeight();
         f32 gs = (f32)layer.gridSize;
 
+        // 视差: parallaxFactor < 1 的层移动更慢 (远景效果)
+        f32 layerCamX = camPos.x * layer.parallaxFactorX;
+        f32 layerCamY = camPos.y * layer.parallaxFactorY;
+        f32 layerViewW = viewW;
+        f32 layerViewH = viewH;
+
+        // 层透明度
+        glm::vec4 layerTint = glm::vec4(1.0f, 1.0f, 1.0f, layer.opacity);
+
         for (auto& tile : layer.tiles) {
             // tile 世界坐标 (单位: tile)
             f32 worldX = (f32)tile.px_x / gs;
             f32 worldY = (f32)tile.px_y / gs;
 
-            // 视锥裁剪
-            if (worldX + tileWorldSize < camPos.x || worldX > camPos.x + viewW) continue;
-            if (worldY + tileWorldSize < camPos.y || worldY > camPos.y + viewH) continue;
+            // 视锥裁剪 (使用视差调整后的相机位置)
+            if (worldX + tileWorldSize < layerCamX || worldX > layerCamX + layerViewW) continue;
+            if (worldY + tileWorldSize < layerCamY || worldY > layerCamY + layerViewH) continue;
 
-            // 像素完美对齐 — 与传统渲染一致
-            f32 sx = std::round((worldX - camPos.x) * ppu);
-            f32 sy = std::round(screenH - (worldY - camPos.y + tileWorldSize) * ppu);
-            f32 tw = std::round((worldX + tileWorldSize - camPos.x) * ppu) - sx;
-            f32 th = std::round(screenH - (worldY - camPos.y) * ppu) - sy;
+            // 像素完美对齐 — 使用视差偏移后的相机位置
+            f32 sx = std::round((worldX - layerCamX) * ppu);
+            f32 sy = std::round(screenH - (worldY - layerCamY + tileWorldSize) * ppu);
+            f32 tw = std::round((worldX + tileWorldSize - layerCamX) * ppu) - sx;
+            f32 th = std::round(screenH - (worldY - layerCamY) * ppu) - sy;
 
             // UV 计算 (stbi Y 翻转: PNG top=0 → OpenGL v=1.0)
             // half-pixel inset: 向内收缩 0.5 像素防止采样到相邻 tile
@@ -1299,7 +1308,7 @@ void GameLayer::RenderLdtkMap() {
             if (tile.flip & 1) std::swap(u0, u1); // 水平翻转
             if (tile.flip & 2) std::swap(v0, v1); // 垂直翻转
 
-            SpriteBatch::Draw(tex, {sx, sy}, {tw, th}, {u0, v0, u1, v1}, 0.0f);
+            SpriteBatch::Draw(tex, {sx, sy}, {tw, th}, {u0, v0, u1, v1}, 0.0f, layerTint);
         }
     }
 }

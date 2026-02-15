@@ -47,6 +47,11 @@ struct LdtkLayer {
     i32 gridW, gridH;           // 格子数
     i32 pxOffsetX, pxOffsetY;   // 层偏移
 
+    // 视差滚动 (借鉴 Godot ParallaxLayer motionScale)
+    f32 parallaxFactorX = 1.0f;  // 1.0=无视差, 0.5=半速(远景), 0=固定
+    f32 parallaxFactorY = 1.0f;
+    f32 opacity = 1.0f;          // 层透明度 (0~1)
+
     // Tileset 信息
     std::string tilesetRelPath; // tileset 相对路径
     i32 tilesetW, tilesetH;     // tileset 尺寸 (像素)

@@ -91,6 +91,15 @@ bool LdtkLoader::Load(const std::string& path, LdtkProject& project) {
             layer.gridH = li.value("__cHei", 0);
             layer.pxOffsetX = li.value("__pxTotalOffsetX", 0);
             layer.pxOffsetY = li.value("__pxTotalOffsetY", 0);
+            layer.opacity = li.value("__opacity", 1.0f);
+
+            // 视差因子 (LDtk 1.3+ __parallaxFactorX/Y)
+            if (li.contains("__parallaxFactorX")) {
+                layer.parallaxFactorX = li["__parallaxFactorX"].get<f32>();
+            }
+            if (li.contains("__parallaxFactorY")) {
+                layer.parallaxFactorY = li["__parallaxFactorY"].get<f32>();
+            }
 
             // Tileset 信息
             i32 tsUid = li.value("__tilesetDefUid", -1);
