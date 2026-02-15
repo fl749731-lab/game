@@ -80,31 +80,38 @@ i32 GLShader::GetUniformLocation(const std::string& name) {
 }
 
 void GLShader::SetInt(const std::string& name, i32 value) {
-    glUniform1i(GetUniformLocation(name), value);
+    i32 loc = GetUniformLocation(name);
+    if (loc != -1) glUniform1i(loc, value);
 }
 
 void GLShader::SetFloat(const std::string& name, f32 value) {
-    glUniform1f(GetUniformLocation(name), value);
+    i32 loc = GetUniformLocation(name);
+    if (loc != -1) glUniform1f(loc, value);
 }
 
 void GLShader::SetVec2(const std::string& name, f32 x, f32 y) {
-    glUniform2f(GetUniformLocation(name), x, y);
+    i32 loc = GetUniformLocation(name);
+    if (loc != -1) glUniform2f(loc, x, y);
 }
 
 void GLShader::SetVec3(const std::string& name, f32 x, f32 y, f32 z) {
-    glUniform3f(GetUniformLocation(name), x, y, z);
+    i32 loc = GetUniformLocation(name);
+    if (loc != -1) glUniform3f(loc, x, y, z);
 }
 
 void GLShader::SetVec4(const std::string& name, f32 x, f32 y, f32 z, f32 w) {
-    glUniform4f(GetUniformLocation(name), x, y, z, w);
+    i32 loc = GetUniformLocation(name);
+    if (loc != -1) glUniform4f(loc, x, y, z, w);
 }
 
 void GLShader::SetMat3(const std::string& name, const f32* value) {
-    glUniformMatrix3fv(GetUniformLocation(name), 1, GL_FALSE, value);
+    i32 loc = GetUniformLocation(name);
+    if (loc != -1) glUniformMatrix3fv(loc, 1, GL_FALSE, value);
 }
 
 void GLShader::SetMat4(const std::string& name, const f32* value) {
-    glUniformMatrix4fv(GetUniformLocation(name), 1, GL_FALSE, value);
+    i32 loc = GetUniformLocation(name);
+    if (loc != -1) glUniformMatrix4fv(loc, 1, GL_FALSE, value);
 }
 
 } // namespace Engine
