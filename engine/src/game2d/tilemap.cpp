@@ -128,10 +128,23 @@ void TilemapRenderer::Draw(const Tilemap& map,
                 glm::vec2 pos((f32)x, (f32)y);
                 glm::vec2 size(1.0f, 1.0f);
 
-                // 用 SpriteBatch 中的 Draw 直接绘制
-                // 由于 SpriteBatch 使用 Texture2D Ref, 此处简化为坐标计算
-                SpriteBatch::Draw(tex, pos, size, 0.0f,
-                                  glm::vec4(1.0f)); // TODO: UV 子区域
+                // 计算 tileset 图集中的 UV 子区域
+                f32 tileU0 = (f32)(col * tileSize) / (f32)texW;
+                f32 tileV0 = (f32)(row * tileSize) / (f32)texH;
+                f32 tileU1 = (f32)((col + 1) * tileSize) / (f32)texW;
+                f32 tileV1 = (f32)((row + 1) * tileSize) / (f32)texH;
+
+                // half-pixel inset 防止采样到相邻 tile
+                f32 halfPxU = 0.5f / (f32)texW;
+                f32 halfPxV = 0.5f / (f32)texH;
+                tileU0 += halfPxU;
+                tileV0 += halfPxV;
+                tileU1 -= halfPxU;
+                tileV1 -= halfPxV;
+
+                SpriteBatch::Draw(tex, pos, size,
+                                  {tileU0, tileV0, tileU1, tileV1}, 0.0f,
+                                  glm::vec4(1.0f));
             }
         }
     }
