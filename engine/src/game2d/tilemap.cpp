@@ -129,10 +129,11 @@ void TilemapRenderer::Draw(const Tilemap& map,
                 glm::vec2 size(1.0f, 1.0f);
 
                 // 计算 tileset 图集中的 UV 子区域
+                // stbi Y翻转: PNG top=0 → OpenGL v=1.0, 需要 1.0-v 补偿
                 f32 tileU0 = (f32)(col * tileSize) / (f32)texW;
-                f32 tileV0 = (f32)(row * tileSize) / (f32)texH;
                 f32 tileU1 = (f32)((col + 1) * tileSize) / (f32)texW;
-                f32 tileV1 = (f32)((row + 1) * tileSize) / (f32)texH;
+                f32 tileV0 = 1.0f - (f32)((row + 1) * tileSize) / (f32)texH; // 底边
+                f32 tileV1 = 1.0f - (f32)(row * tileSize) / (f32)texH;       // 顶边
 
                 // half-pixel inset 防止采样到相邻 tile
                 f32 halfPxU = 0.5f / (f32)texW;
