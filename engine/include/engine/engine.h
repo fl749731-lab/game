@@ -111,6 +111,11 @@
 #include "engine/audio/audio_engine.h"
 #include "engine/audio/audio_mixer.h"
 
+// Game2D (引擎级通用 2D 工具)
+#include "engine/game2d/sprite2d.h"
+#include "engine/game2d/tilemap.h"
+#include "engine/game2d/camera2d_controller.h"
+
 // AI (optional)
 #ifdef ENGINE_HAS_PYTHON
 #include "engine/ai/python_engine.h"

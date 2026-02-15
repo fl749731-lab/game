@@ -50,6 +50,10 @@ target_link_libraries(imgui PUBLIC glfw glad)
 
 add_subdirectory(engine)
 
+# ── 游戏框架库 (星露谷等游戏专属逻辑) ────────────────────────
+
+add_subdirectory(game)
+
 # ── 沙盒测试应用 ────────────────────────────────────────────
 
 add_subdirectory(sandbox)
