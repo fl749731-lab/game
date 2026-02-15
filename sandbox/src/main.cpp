@@ -114,8 +114,8 @@ static void BuildDemoScene(Engine::Scene& scene) {
     // 方向光
     auto& dirLight = scene.GetDirLight();
     dirLight.Direction = {-0.3f, -1.0f, -0.5f};
-    dirLight.Color = {0.4f, 0.35f, 0.5f};
-    dirLight.Intensity = 0.6f;
+    dirLight.Color = {1.0f, 0.95f, 0.9f};
+    dirLight.Intensity = 2.0f;
 
     // 点光源
     auto& pl0 = scene.AddPointLight();
@@ -148,9 +148,9 @@ public:
         auto& window = Engine::Application::Get().GetWindow();
 
         // 天空盒
-        Engine::Skybox::SetTopColor(0.02f, 0.02f, 0.12f);
-        Engine::Skybox::SetHorizonColor(0.15f, 0.12f, 0.25f);
-        Engine::Skybox::SetBottomColor(0.05f, 0.03f, 0.08f);
+        Engine::Skybox::SetTopColor(0.2f, 0.4f, 0.8f);
+        Engine::Skybox::SetHorizonColor(0.8f, 0.65f, 0.5f);
+        Engine::Skybox::SetBottomColor(0.25f, 0.2f, 0.15f);
 
         // Editor
         Engine::Editor::Init(window.GetNativeWindow());
@@ -236,6 +236,7 @@ public:
         if (Engine::Input::IsKeyJustPressed(Engine::Key::F1)) {
             m_Wireframe = !m_Wireframe;
             Engine::SceneRenderer::SetWireframe(m_Wireframe);
+            LOG_INFO("[Input] F1 pressed -> wireframe=%d", m_Wireframe);
         }
         if (Engine::Input::IsKeyDown(Engine::Key::F3)) {
             float exp = Engine::SceneRenderer::GetExposure();
@@ -245,13 +246,18 @@ public:
             float exp = Engine::SceneRenderer::GetExposure();
             Engine::SceneRenderer::SetExposure(glm::min(exp + dt, 5.0f));
         }
-        if (Engine::Input::IsKeyJustPressed(Engine::Key::F5))
+        if (Engine::Input::IsKeyJustPressed(Engine::Key::F5)) {
             Engine::DebugDraw::SetEnabled(!Engine::DebugDraw::IsEnabled());
-        if (Engine::Input::IsKeyJustPressed(Engine::Key::F6))
+            LOG_INFO("[Input] F5 pressed -> DebugDraw=%d", Engine::DebugDraw::IsEnabled());
+        }
+        if (Engine::Input::IsKeyJustPressed(Engine::Key::F6)) {
             Engine::DebugUI::SetEnabled(!Engine::DebugUI::IsEnabled());
+            LOG_INFO("[Input] F6 pressed -> DebugUI=%d", Engine::DebugUI::IsEnabled());
+        }
         if (Engine::Input::IsKeyJustPressed(Engine::Key::F7)) {
             m_ShowProfiler = !m_ShowProfiler;
             Engine::Profiler::SetEnabled(m_ShowProfiler);
+            LOG_INFO("[Input] F7 pressed -> Profiler=%d", m_ShowProfiler);
         }
         if (Engine::Input::IsKeyJustPressed(Engine::Key::F8)) {
             Engine::SceneRenderer::SetBloomEnabled(!Engine::SceneRenderer::GetBloomEnabled());
@@ -274,6 +280,15 @@ public:
             int mode = Engine::SceneRenderer::GetGBufferDebugMode();
             mode = (mode + 1) % 6;
             Engine::SceneRenderer::SetGBufferDebugMode(mode);
+            LOG_INFO("[Input] F12 pressed -> GBufDebug=%d", mode);
+        }
+        if (Engine::Input::IsKeyJustPressed(Engine::Key::F2)) {
+            Engine::Editor::Toggle();
+            LOG_INFO("[Input] F2 pressed -> Editor=%d", Engine::Editor::IsEnabled());
+        }
+        if (Engine::Input::IsKeyJustPressed(Engine::Key::F11)) {
+            Engine::Editor::Toggle();
+            LOG_INFO("[Input] F11 pressed -> Editor=%d", Engine::Editor::IsEnabled());
         }
 
         // 摄像机
@@ -432,7 +447,7 @@ public:
 private:
     // 场景
     Engine::Ref<Engine::Scene> m_Scene;
-    Engine::Entity m_SelectedEntity = 0;
+    Engine::Entity m_SelectedEntity = Engine::INVALID_ENTITY;
 
     // 摄像机
     Engine::PerspectiveCamera m_Camera{45, 1280.f/720.f, 0.1f, 100.f};

@@ -21,7 +21,7 @@ class ECSWorld;
 // ── Entity —— 只是一个 ID ───────────────────────────────────
 
 using Entity = u32;
-constexpr Entity INVALID_ENTITY = 0;
+constexpr Entity INVALID_ENTITY = ~Entity(0);  // UINT32_MAX
 
 // ── Component 基类 ──────────────────────────────────────────
 

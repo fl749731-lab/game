@@ -95,7 +95,8 @@ private:
     static float s_ScrollOffset;
     static bool s_FirstMouse;
     static CursorMode s_CursorMode;
-    static std::unordered_map<int, bool> s_KeyStateLastFrame;
+    static std::unordered_map<int, bool> s_KeyStatePrevFrame;
+    static std::unordered_map<int, bool> s_KeyStateCurrFrame;
 
     static void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 };

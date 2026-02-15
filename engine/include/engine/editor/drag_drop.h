@@ -24,7 +24,7 @@ struct DragDropPayload {
 
     Type PayloadType = None;
     char Path[256] = {};
-    u32  EntityID = 0;
+    u32  EntityID = ~u32(0);  // INVALID_ENTITY
 };
 
 class DragDropManager {

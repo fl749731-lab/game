@@ -91,7 +91,7 @@ void Editor::DrawSceneHierarchy(Scene& scene, Entity& selectedEntity) {
 void Editor::DrawInspector(ECSWorld& world, Entity entity) {
     ImGui::Begin("Inspector");
 
-    if (entity == 0) {
+    if (entity == INVALID_ENTITY) {
         ImGui::TextDisabled("Select an entity in hierarchy");
         ImGui::End();
         return;

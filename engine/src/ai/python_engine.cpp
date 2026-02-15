@@ -958,7 +958,7 @@ AIAction AIAgent::UpdateAI(const AIContext&) { return {}; }
 
 // PlayerTracker stubs
 std::deque<PlayerSnapshot> PlayerTracker::s_History;
-u32 PlayerTracker::s_PlayerEntity = 0;
+u32 PlayerTracker::s_PlayerEntity = ~u32(0);  // INVALID_ENTITY
 glm::vec3 PlayerTracker::s_LastPosition = {0,0,0};
 f32 PlayerTracker::s_TotalTime = 0;
 std::deque<f32> PlayerTracker::s_AttackTimes;

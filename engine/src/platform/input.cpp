@@ -12,7 +12,8 @@ float Input::s_DeltaY = 0;
 float Input::s_ScrollOffset = 0;
 bool Input::s_FirstMouse = true;
 CursorMode Input::s_CursorMode = CursorMode::Normal;
-std::unordered_map<int, bool> Input::s_KeyStateLastFrame;
+std::unordered_map<int, bool> Input::s_KeyStatePrevFrame;
+std::unordered_map<int, bool> Input::s_KeyStateCurrFrame;
 
 void Input::Init(GLFWwindow* window) {
     s_Window = window;
@@ -20,6 +21,13 @@ void Input::Init(GLFWwindow* window) {
 }
 
 void Input::Update() {
+    // ── 按键状态双缓冲：prev ← curr, 然后重新轮询 curr ──
+    // 此时 glfwGetKey 反映的是上一帧末尾 glfwPollEvents 后的状态
+    s_KeyStatePrevFrame = s_KeyStateCurrFrame;
+    for (auto& [key, state] : s_KeyStateCurrFrame) {
+        state = (glfwGetKey(s_Window, key) == GLFW_PRESS);
+    }
+
     // 计算鼠标 Delta
     double mx, my;
     glfwGetCursorPos(s_Window, &mx, &my);
@@ -39,11 +47,7 @@ void Input::Update() {
 
 void Input::EndFrame() {
     s_ScrollOffset = 0;
-
-    // 更新按键上帧状态（用于边沿检测）
-    for (auto& [key, wasPressed] : s_KeyStateLastFrame) {
-        wasPressed = (glfwGetKey(s_Window, key) == GLFW_PRESS);
-    }
+    // 按键状态更新已移至 Update()，此处不再处理
 }
 
 void Input::ScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
@@ -82,24 +86,25 @@ bool Input::IsKeyDown(Key key) {
 
 bool Input::IsKeyJustPressed(Key key) {
     int k = static_cast<int>(key);
-    bool nowPressed = (glfwGetKey(s_Window, k) == GLFW_PRESS);
-    auto it = s_KeyStateLastFrame.find(k);
-    if (it == s_KeyStateLastFrame.end()) {
-        s_KeyStateLastFrame[k] = nowPressed;
-        return nowPressed; // 首次查询，若当前按下则视为刚按下
+    // 如果是首次查询此键，注册到追踪列表
+    if (s_KeyStateCurrFrame.find(k) == s_KeyStateCurrFrame.end()) {
+        bool nowPressed = (glfwGetKey(s_Window, k) == GLFW_PRESS);
+        s_KeyStateCurrFrame[k] = nowPressed;
+        s_KeyStatePrevFrame[k] = false;
+        return nowPressed;
     }
-    return nowPressed && !it->second;
+    return s_KeyStateCurrFrame[k] && !s_KeyStatePrevFrame[k];
 }
 
 bool Input::IsKeyJustReleased(Key key) {
     int k = static_cast<int>(key);
-    bool nowPressed = (glfwGetKey(s_Window, k) == GLFW_PRESS);
-    auto it = s_KeyStateLastFrame.find(k);
-    if (it == s_KeyStateLastFrame.end()) {
-        s_KeyStateLastFrame[k] = nowPressed;
+    if (s_KeyStateCurrFrame.find(k) == s_KeyStateCurrFrame.end()) {
+        bool nowPressed = (glfwGetKey(s_Window, k) == GLFW_PRESS);
+        s_KeyStateCurrFrame[k] = nowPressed;
+        s_KeyStatePrevFrame[k] = nowPressed;
         return false;
     }
-    return !nowPressed && it->second;
+    return !s_KeyStateCurrFrame[k] && s_KeyStatePrevFrame[k];
 }
 
 bool Input::IsMouseButtonPressed(MouseButton button) {

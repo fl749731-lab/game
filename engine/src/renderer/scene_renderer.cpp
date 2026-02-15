@@ -108,7 +108,7 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
     if (!ResourceManager::GetMesh("sphere"))
         ResourceManager::StoreMesh("sphere", Mesh::CreateSphere(32, 32));
 
-    // 棋盘纹理
+    // 棋盘纹理 — 注册到 ResourceManager 供 BatchRenderer 使用
     const int ts = 256;
     std::vector<u8> ck(ts * ts * 4);
     for (int y = 0; y < ts; y++) {
@@ -119,14 +119,9 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
             ck[i] = v; ck[i+1] = v + 10; ck[i+2] = v; ck[i+3] = 255;
         }
     }
-    glGenTextures(1, &s_CheckerTexID);
-    glBindTexture(GL_TEXTURE_2D, s_CheckerTexID);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, ts, ts, 0, GL_RGBA, GL_UNSIGNED_BYTE, ck.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glGenerateMipmap(GL_TEXTURE_2D);
+    auto checkerTex = std::make_shared<Texture2D>((u32)ts, (u32)ts, (const void*)ck.data());
+    ResourceManager::CacheTexture("__checker", checkerTex);
+    s_CheckerTexID = checkerTex->GetID();
 
     // Uniform 名称缓存
     for (int i = 0; i < MAX_POINT_LIGHTS; i++) {
@@ -164,7 +159,8 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
 }
 
 void SceneRenderer::Shutdown() {
-    if (s_CheckerTexID) { glDeleteTextures(1, &s_CheckerTexID); s_CheckerTexID = 0; }
+    // 棋盘纹理由 ResourceManager 管理，无需手动删除
+    s_CheckerTexID = 0;
     s_HDR_FBO.reset();
     GBuffer::Shutdown();
     s_GBufferShader.reset();
@@ -350,9 +346,18 @@ void SceneRenderer::GeometryPass(Scene& scene, PerspectiveCamera& camera) {
 // ── Pass 2: 延迟光照 ───────────────────────────────────────
 
 void SceneRenderer::LightingPass(Scene& scene, PerspectiveCamera& camera) {
-    s_HDR_FBO->Bind();
+    // 先将 G-Buffer 深度附加到 HDR FBO (在 Clear 之前！)
+    // 这样 Clear 不会清除 G-Buffer 深度，前向 Pass 可以正确深度测试
+    glBindFramebuffer(GL_FRAMEBUFFER, s_HDR_FBO->GetFBO());
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                           GL_TEXTURE_2D, GBuffer::GetDepthTexture(), 0);
+
+    // 只清除颜色，不清除深度 (保留 G-Buffer 深度)
     Renderer::SetClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    Renderer::Clear();
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // 禁用深度测试/写入 — 全屏四边形不应影响深度缓冲
+    glDisable(GL_DEPTH_TEST);
 
     s_DeferredShader->Bind();
 
@@ -387,11 +392,8 @@ void SceneRenderer::LightingPass(Scene& scene, PerspectiveCamera& camera) {
     // 绘制全屏四边形
     ScreenQuad::Draw();
 
-    // 将 G-Buffer 深度纹理附加到 HDR FBO (供前向 Pass 深度遮挡)
-    // 这避免了 glBlitFramebuffer (自定义 GLAD 未导出)
-    glBindFramebuffer(GL_FRAMEBUFFER, s_HDR_FBO->GetFBO());
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                           GL_TEXTURE_2D, GBuffer::GetDepthTexture(), 0);
+    // 恢复深度测试
+    glEnable(GL_DEPTH_TEST);
 }
 
 // ── Pass 3: 前向叠加 (天空盒/透明物/自发光/粒子/调试) ────
@@ -543,13 +545,6 @@ void SceneRenderer::RenderEntitiesDeferred(Scene& scene, PerspectiveCamera& came
         }
     }
 
-    // 绑定棋盘纹理到 "__checker" 特殊命名的纹理
-    // (BatchRenderer 会给 plane 实体绑真实纹理，这里预绑棋盘)
-    if (!ResourceManager::GetTexture("__checker")) {
-        // 临时方案：直接用 GL 绑定
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, s_CheckerTexID);
-    }
 
     BatchRenderer::End();
 
@@ -647,7 +642,7 @@ void SceneRenderer::SetupLightUniforms(Scene& scene, Shader* shader, Perspective
         dirLight.Color.y * dirLight.Intensity,
         dirLight.Color.z * dirLight.Intensity);
     shader->SetVec3("uViewPos", cp.x, cp.y, cp.z);
-    shader->SetFloat("uAmbientStrength", 0.15f);
+    shader->SetFloat("uAmbientStrength", 0.3f);
 
     // 阴影 (CSM 已在 LightingPass 中单独设置，这里跳过旧代码)
 
