@@ -67,6 +67,30 @@ A general-purpose 2D/3D game engine built from scratch in C/C++.
 | Multi-threaded JobSystem | ✅ | Thread pool + ParallelFor (physics/ECS parallel) |
 | Async Resource Loading | ✅ | AsyncLoader: background decode → main thread GPU upload |
 
+### 2D Engine Tools
+
+| Feature | Status | Description |
+| --- | :---: | --- |
+| Sprite2D + Animation | ✅ | SpriteSheet region slicing + SpriteAnimator multi-state management |
+| Tilemap | ✅ | Multi-layer Tilemap + AABB collision queries + frustum-culled rendering |
+| 2D Camera Controller | ✅ | Smooth follow + dead zone + world bounds + zoom + screen shake |
+| SpriteBatch | ✅ | Batched 2D sprite rendering (texture/solid color/text) |
+| Orthographic Camera | ✅ | OrthographicCamera 2D projection |
+
+### Stardew Valley Game Framework (game/ library)
+
+> Game-specific logic layer, decoupled from the engine. Does not affect engine generality.
+
+| Feature | Status | Description |
+| --- | :---: | --- |
+| Player Control | ✅ | 4-directional movement + tool usage + stamina system |
+| Interaction System | ✅ | Facing-tile detection + E-key interaction + scene portals |
+| Farming System | ✅ | Soil state machine (till→water→plant→grow→harvest) + seasonal restrictions |
+| Time System | ✅ | Day/night cycle + 4-season rotation + random weather + sleep advance |
+| Inventory System | ✅ | Global item database + backpack stacking/hotbar/gold |
+| NPC System | ✅ | Schedule pathfinding + friendship + gift preferences (loved/liked/disliked/hated) |
+| Dialogue System | ✅ | Dialogue trees + typewriter effect (UTF-8 safe) + branching choices |
+
 ### Debug & Performance
 
 | Feature | Status | Description |
@@ -81,14 +105,17 @@ A general-purpose 2D/3D game engine built from scratch in C/C++.
 ## Architecture
 
 ```text
-engine/       ← C++ engine static library (core rendering/physics/ECS/audio/editor)
-sandbox/      ← Test sandbox application
+engine/       ← C++ engine static library (core rendering/physics/ECS/audio/editor/2D tools)
+game/         ← Game framework library (Stardew-specific: farming/NPC/dialogue/inventory, decoupled)
+sandbox/      ← Test sandbox application (links: Sandbox → Game → Engine)
 ai/           ← Script logic layer (generic scripts + hierarchical AI behavior, optional)
 data/         ← Java data layer (JNI bridge, optional)
 third_party/  ← Third-party dependencies (glfw, glad, glm, stb, imgui, cgltf, miniaudio, pybind11)
 tests/        ← Unit tests (Google Test)
 docs/         ← Documentation & benchmarks
 ```
+
+> **Engine Generality**: `engine/` contains no game-specific logic. For 3D games, Sandbox links directly to Engine without the Game library.
 
 ### ECS Design
 
