@@ -27,6 +27,9 @@ public:
     /// 更新纹理数据（子区域）
     void SetData(const void* data, u32 size);
 
+    /// 设置最近邻采样 (Pixel Art 必须)
+    void SetFilterNearest();
+
     u32 GetID() const { return m_ID; }
     u32 GetWidth() const { return m_Width; }
     u32 GetHeight() const { return m_Height; }

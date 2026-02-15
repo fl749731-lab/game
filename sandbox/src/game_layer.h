@@ -1,6 +1,8 @@
 #pragma once
 
 #include "engine/engine.h"
+#include "engine/game2d/autotile.h"
+#include "engine/game2d/ldtk_loader.h"
 #include "game/game_map.h"
 #include "game/combat.h"
 #include "game/zombie.h"
@@ -34,6 +36,7 @@ private:
 
     // ── 渲染 ────────────────────────────────────────────
     void RenderTilemap();
+    void RenderLdtkMap();
     void RenderEntities();
     void RenderBuildPreview();
     void RenderHUD();
@@ -74,6 +77,7 @@ private:
 
     // ── 纹理资源 ────────────────────────────────────────
     Ref<Texture2D> m_TexGrass;
+    Ref<Texture2D> m_TexGrassWall;
     Ref<Texture2D> m_TexDirt;
     Ref<Texture2D> m_TexSand;
     Ref<Texture2D> m_TexRockWall;
@@ -82,9 +86,23 @@ private:
     Ref<Texture2D> m_TexSlime;
     Ref<Texture2D> m_TexItems;
     Ref<Texture2D> m_TexFireWall;
+    Ref<Texture2D> m_TexWater;     // 程序化生成的水面纹理
+
+    // ── Autotile ───────────────────────────────────────
+    AutotileSet m_AutoGrass;
+    AutotileSet m_AutoGrassWall;
+    AutotileSet m_AutoSand;
+    AutotileSet m_AutoRock;
+    AutotileSet m_AutoWater;
 
     // Tile 颜色映射 (TileID → 颜色) — 纹理加载失败时回退
     static glm::vec4 GetTileColor(u16 tileID);
+
+    // ── LDtk 地图 ──────────────────────────────────────
+    bool m_UseLdtk = false;
+    LdtkProject m_LdtkProject;
+    std::unordered_map<std::string, Ref<Texture2D>> m_LdtkTilesets;
+    bool LoadLdtkMap(const std::string& path);
 };
 
 } // namespace Engine

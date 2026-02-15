@@ -22,6 +22,7 @@ glm::vec4 GameLayer::GetTileColor(u16 tileID) {
         case 2:  return {0.55f, 0.41f, 0.08f, 1.0f};  // 泥土 — 棕
         case 3:  return {0.53f, 0.53f, 0.53f, 1.0f};  // 石板 — 灰
         case 4:  return {0.2f, 0.4f, 0.67f, 1.0f};    // 水 — 蓝
+        case 5:  return {0.85f, 0.78f, 0.55f, 1.0f};   // 沙地 — 米色
         case 10: return {0.18f, 0.35f, 0.15f, 1.0f};  // 树木 — 暗绿
         case 11: return {0.4f, 0.4f, 0.4f, 1.0f};     // 石头 — 灰
         case 12: return {0.55f, 0.27f, 0.07f, 1.0f};  // 栅栏 — 深棕
@@ -91,6 +92,7 @@ void GameLayer::OnAttach() {
     auto loadTex = [](const std::string& path) -> Ref<Texture2D> {
         auto tex = std::make_shared<Texture2D>(path);
         if (tex->IsValid()) {
+            tex->SetFilterNearest();  // Pixel Art: 最近邻采样
             LOG_INFO("[GameLayer] 加载贴图: %s (%ux%u)", path.c_str(), tex->GetWidth(), tex->GetHeight());
         } else {
             LOG_WARN("[GameLayer] 贴图加载失败: %s", path.c_str());
@@ -98,6 +100,7 @@ void GameLayer::OnAttach() {
         return tex;
     };
     m_TexGrass    = loadTex("assets/textures/tiles/GrassTile.png");
+    m_TexGrassWall= loadTex("assets/textures/tiles/GrassWall.png");
     m_TexDirt     = loadTex("assets/textures/tiles/DirtTile.png");
     m_TexSand     = loadTex("assets/textures/tiles/SandTile.png");
     m_TexRockWall = loadTex("assets/textures/tiles/RockWall.png");
@@ -106,6 +109,22 @@ void GameLayer::OnAttach() {
     m_TexSlime    = loadTex("assets/textures/characters/Slime.png");
     m_TexItems    = loadTex("assets/textures/objects/Items.png");
     m_TexFireWall = loadTex("assets/textures/objects/FireWall.png");
+
+    m_TexWater    = loadTex("assets/textures/tiles/WaterTile.png");
+
+    // ── 初始化 AutotileSet ───────────────────────────────
+    m_AutoGrass     = CreateStandardAutotile(176.0f, 80.0f);
+    m_AutoGrassWall = CreateStandardAutotile(176.0f, 80.0f);
+    m_AutoSand      = CreateStandardAutotile(176.0f, 80.0f);
+    m_AutoRock      = CreateStandardAutotile(176.0f, 80.0f);
+    m_AutoWater     = CreateStandardAutotile(176.0f, 80.0f);
+
+    // ── 尝试加载 LDtk 地图 ─────────────────────────
+    if (LoadLdtkMap("assets/maps/world.ldtk")) {
+        LOG_INFO("[GameLayer] LDtk 地图加载成功, 使用 LDtk 渲染");
+    } else {
+        LOG_INFO("[GameLayer] LDtk 地图未找到, 使用程序化地图");
+    }
 
     LOG_INFO("[GameLayer] 丧尸生存原型启动!");
 }
@@ -615,6 +634,12 @@ void GameLayer::OnRender() {
 }
 
 void GameLayer::RenderTilemap() {
+    // LDtk 地图优先
+    if (m_UseLdtk) {
+        RenderLdtkMap();
+        return;
+    }
+
     auto& tilemap = m_GameMap.GetTilemap();
     glm::vec2 camCenter = m_CamCtrl.GetPosition();
     f32 zoom = m_CamCtrl.GetZoom();
@@ -636,37 +661,52 @@ void GameLayer::RenderTilemap() {
     f32 tileScreenW = screenW / viewW;
     f32 tileScreenH = screenH / viewH;
 
-    // 绘制地面层
+    // ════════════════════════════════════════════════════════════
+    //  地面层 — 单层 Autotile 直接渲染
+    //  Valley Ruin 贴图边缘自带泥土色过渡 (alpha=255 不透明)
+    //  泥土格(TileID=2)用 DirtTile 纹理直接填充
+    // ════════════════════════════════════════════════════════════
+    i32 mapW = (i32)tilemap.GetWidth();
+    i32 mapH = (i32)tilemap.GetHeight();
     for (i32 y = startY; y < endY; y++) {
         for (i32 x = startX; x < endX; x++) {
             auto& tile = tilemap.GetTile(0, x, y);
+            if (tile.TileID == 0) continue;
 
-            f32 sx = (x - camPos.x) * tileScreenW;
-            f32 sy = screenH - (y - camPos.y + 1) * tileScreenH; // Y翻转
+            // 像素完美对齐
+            f32 sx = std::round((x - camPos.x) * tileScreenW);
+            f32 sy = std::round(screenH - (y - camPos.y + 1) * tileScreenH);
+            f32 tw = std::round((x + 1 - camPos.x) * tileScreenW) - sx;
+            f32 th = std::round(screenH - (y - camPos.y) * tileScreenH) - sy;
             glm::vec2 drawPos = {sx, sy};
-            glm::vec2 drawSize = {tileScreenW + 1, tileScreenH + 1};
+            glm::vec2 drawSize = {tw, th};
 
-            // 根据 TileID 选择贴图
+            // 4-bit Bitmask: 上1 右2 下4 左8
+            u16 nUp    = (y > 0)        ? tilemap.GetTile(0, x, y - 1).TileID : 0;
+            u16 nRight = (x < mapW - 1) ? tilemap.GetTile(0, x + 1, y).TileID : 0;
+            u16 nDown  = (y < mapH - 1) ? tilemap.GetTile(0, x, y + 1).TileID : 0;
+            u16 nLeft  = (x > 0)        ? tilemap.GetTile(0, x - 1, y).TileID : 0;
+            u8 mask = AutotileSet::CalcBitmask(tile.TileID, nUp, nRight, nDown, nLeft);
+
+            // 选择纹理和 AutotileSet
             Ref<Texture2D> tex = nullptr;
+            AutotileSet* autoSet = nullptr;
+
             switch (tile.TileID) {
-                case 1:  tex = m_TexGrass; break;    // 草地
-                case 2:  tex = m_TexDirt;  break;    // 泥土
-                case 3:  tex = m_TexRockWall; break; // 石板
-                case 4:  break;                       // 水 (保持纯色)
+                case 1:  tex = m_TexGrass;     autoSet = &m_AutoGrass;  break;
+                case 2:  tex = m_TexDirt;      break;  // 泥土: 无 autotile
+                case 3:  tex = m_TexRockWall;  autoSet = &m_AutoRock;   break;
+                case 4:  tex = m_TexWater;     autoSet = &m_AutoWater;  break;
+                case 5:  tex = m_TexSand;      autoSet = &m_AutoSand;   break;
                 default: break;
             }
 
-            if (tex && tex->IsValid()) {
-                // 图集类纹理: 取 autotile 中心纯色填充块
-                glm::vec4 uv = {0.0f, 0.0f, 1.0f, 1.0f}; // 默认全图 (DirtTile)
-                if (tile.TileID == 1) {
-                    // GrassTile 176x80 autotile: 左上48x48块的中心16x16是纯草地
-                    uv = {16.0f/176.0f, 16.0f/80.0f, 32.0f/176.0f, 32.0f/80.0f};
-                } else if (tile.TileID == 3) {
-                    // RockWall autotile: 同理取中心纯石墙块
-                    uv = {16.0f/176.0f, 16.0f/80.0f, 32.0f/176.0f, 32.0f/80.0f};
-                }
+            if (tex && tex->IsValid() && autoSet) {
+                glm::vec4 uv = autoSet->GetUV(mask);
                 SpriteBatch::Draw(tex, drawPos, drawSize, uv, 0.0f);
+            } else if (tex && tex->IsValid()) {
+                SpriteBatch::Draw(tex, drawPos, drawSize,
+                                  {0.0f, 0.0f, 1.0f, 1.0f}, 0.0f);
             } else {
                 glm::vec4 color = GetTileColor(tile.TileID);
                 SpriteBatch::DrawRect(drawPos, drawSize, color);
@@ -674,23 +714,51 @@ void GameLayer::RenderTilemap() {
         }
     }
 
-    // 绘制物件层
+    // ── 绘制装饰层 (layer 1) ──────────────────────────
     for (i32 y = startY; y < endY; y++) {
         for (i32 x = startX; x < endX; x++) {
             auto& tile = tilemap.GetTile(1, x, y);
+            if (tile.TileID == 0) continue;
+
+            f32 sx = (x - camPos.x) * tileScreenW;
+            f32 sy = screenH - (y - camPos.y + 1) * tileScreenH;
+
+            // 装饰物色块 (小草=绿点, 花=彩点, 碎石=灰点)
+            glm::vec4 decorColor;
+            switch (tile.TileID) {
+                case 20: decorColor = {0.35f, 0.55f, 0.28f, 0.6f}; break; // 小草
+                case 21: decorColor = {0.85f, 0.45f, 0.55f, 0.7f}; break; // 花
+                case 22: decorColor = {0.50f, 0.48f, 0.45f, 0.5f}; break; // 碎石
+                default: decorColor = {0.5f, 0.5f, 0.5f, 0.4f}; break;
+            }
+            // 装饰物画小一圈 (居中缩小)
+            f32 decorScale = 0.4f;
+            f32 dw = tileScreenW * decorScale;
+            f32 dh = tileScreenH * decorScale;
+            f32 ox = (tileScreenW - dw) * 0.5f;
+            f32 oy = (tileScreenH - dh) * 0.5f;
+            SpriteBatch::DrawRect({sx + ox, sy + oy}, {dw, dh}, decorColor);
+        }
+    }
+
+    // ── 绘制障碍物层 (layer 2) — Y 轴排序 ──────────
+    // 从上到下 (Y从小到大) 绘制，保证下方物体遮挡上方
+    for (i32 y = startY; y < endY; y++) {
+        for (i32 x = startX; x < endX; x++) {
+            auto& tile = tilemap.GetTile(2, x, y);
             if (tile.TileID == 0) continue;
 
             glm::vec4 color = GetTileColor(tile.TileID);
             f32 sx = (x - camPos.x) * tileScreenW;
             f32 sy = screenH - (y - camPos.y + 1) * tileScreenH;
 
-            // 物件层贴图 (树木/石头/栏杆/墙壁)
+            // 物件层贴图 (带 UV)
             Ref<Texture2D> tex = nullptr;
             glm::vec4 objUv = {0.0f, 0.0f, 1.0f, 1.0f};
             switch (tile.TileID) {
                 case 12:
                     tex = m_TexFence;
-                    objUv = {0.0f, 0.0f, 0.25f, 0.75f}; // fence 64x64: 左侧完整栅栏
+                    objUv = {0.0f, 0.0f, 0.25f, 0.75f};
                     break;
                 case 13:
                     tex = m_TexRockWall;
@@ -1050,6 +1118,112 @@ void GameLayer::RenderHUD() {
     if (m_GameOver) {
         SpriteBatch::DrawRect({screenW * 0.5f - 150, screenH * 0.5f - 30},
                                {300, 60}, {0.8f, 0.1f, 0.1f, 0.9f});
+    }
+}
+
+} // namespace Engine
+
+// ══════════════════════════════════════════════════════════════
+//  LDtk 地图加载和渲染
+// ══════════════════════════════════════════════════════════════
+
+namespace Engine {
+
+bool GameLayer::LoadLdtkMap(const std::string& path) {
+    if (!LdtkLoader::Load(path, m_LdtkProject)) {
+        m_UseLdtk = false;
+        return false;
+    }
+
+    // 加载所有引用的 tileset 纹理
+    for (auto& level : m_LdtkProject.levels) {
+        for (auto& layer : level.layers) {
+            if (layer.tilesetRelPath.empty()) continue;
+            if (m_LdtkTilesets.count(layer.tilesetRelPath)) continue;
+
+            // 构建完整路径
+            std::string fullPath = m_LdtkProject.basePath + layer.tilesetRelPath;
+            auto tex = std::make_shared<Texture2D>(fullPath);
+            if (tex->IsValid()) {
+                tex->SetFilterNearest();  // Pixel Art
+                LOG_INFO("[LDtk] 加载 tileset: %s (%ux%u)",
+                         layer.tilesetRelPath.c_str(),
+                         tex->GetWidth(), tex->GetHeight());
+            } else {
+                LOG_WARN("[LDtk] tileset 加载失败: %s", fullPath.c_str());
+            }
+            m_LdtkTilesets[layer.tilesetRelPath] = tex;
+        }
+    }
+
+    m_UseLdtk = true;
+    return true;
+}
+
+void GameLayer::RenderLdtkMap() {
+    if (m_LdtkProject.levels.empty()) return;
+
+    // 使用第一个 level
+    auto& level = m_LdtkProject.levels[0];
+
+    // 相机参数
+    glm::vec2 camCenter = m_CamCtrl.GetPosition();
+    f32 zoom = m_CamCtrl.GetZoom();
+    f32 viewW = 20.0f / zoom;
+    f32 viewH = 15.0f / zoom;
+    glm::vec2 camPos = camCenter - glm::vec2(viewW * 0.5f, viewH * 0.5f);
+
+    auto& window = Application::Get().GetWindow();
+    f32 screenW = (f32)window.GetWidth();
+    f32 screenH = (f32)window.GetHeight();
+    f32 ppu = screenW / viewW;  // 每单位像素数
+
+    i32 gridSize = m_LdtkProject.defaultGridSize;
+    f32 tileWorldSize = 1.0f;  // 1 tile = 1 世界单位
+
+    // 从后往前渲染层 (LDtk 层顺序: 越后越底层)
+    for (i32 li = (i32)level.layers.size() - 1; li >= 0; li--) {
+        auto& layer = level.layers[li];
+        if (layer.tiles.empty()) continue;
+        if (layer.tilesetRelPath.empty()) continue;
+
+        // 获取 tileset 纹理
+        auto it = m_LdtkTilesets.find(layer.tilesetRelPath);
+        if (it == m_LdtkTilesets.end() || !it->second || !it->second->IsValid())
+            continue;
+
+        auto& tex = it->second;
+        f32 texW = (f32)tex->GetWidth();
+        f32 texH = (f32)tex->GetHeight();
+        f32 gs = (f32)layer.gridSize;
+
+        for (auto& tile : layer.tiles) {
+            // tile 世界坐标 (单位: tile)
+            f32 worldX = (f32)tile.px_x / gs;
+            f32 worldY = (f32)tile.px_y / gs;
+
+            // 视锥裁剪
+            if (worldX + tileWorldSize < camPos.x || worldX > camPos.x + viewW) continue;
+            if (worldY + tileWorldSize < camPos.y || worldY > camPos.y + viewH) continue;
+
+            // 像素完美对齐 — 与传统渲染一致
+            f32 sx = std::round((worldX - camPos.x) * ppu);
+            f32 sy = std::round(screenH - (worldY - camPos.y + tileWorldSize) * ppu);
+            f32 tw = std::round((worldX + tileWorldSize - camPos.x) * ppu) - sx;
+            f32 th = std::round(screenH - (worldY - camPos.y) * ppu) - sy;
+
+            // UV 计算 (stbi Y 翻转: PNG top=0 → OpenGL v=1.0)
+            f32 u0 = tile.src_x / texW;
+            f32 u1 = (tile.src_x + gs) / texW;
+            f32 v0 = 1.0f - (tile.src_y + gs) / texH;
+            f32 v1 = 1.0f - tile.src_y / texH;
+
+            // 翻转处理
+            if (tile.flip & 1) std::swap(u0, u1); // 水平翻转
+            if (tile.flip & 2) std::swap(v0, v1); // 垂直翻转
+
+            SpriteBatch::Draw(tex, {sx, sy}, {tw, th}, {u0, v0, u1, v1}, 0.0f);
+        }
     }
 }
 

@@ -116,6 +116,7 @@ target_include_directories(Engine
         "${CMAKE_SOURCE_DIR}/third_party/stb"
         "${CMAKE_SOURCE_DIR}/third_party/miniaudio"
         "${CMAKE_SOURCE_DIR}/third_party/cgltf"
+        "${CMAKE_SOURCE_DIR}/third_party"
         $<$<BOOL:${Python3_FOUND}>:${Python3_INCLUDE_DIRS}>
 )
 

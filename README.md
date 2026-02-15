@@ -73,6 +73,8 @@
 | --- | :---: | --- |
 | Sprite2D + 帧动画 | ✅ | SpriteSheet 区域切片 + SpriteAnimator 多动画状态管理 |
 | Tilemap 瓦片地图 | ✅ | 多层 Tilemap + AABB 碰撞查询 + 视锥裁剪渲染 |
+| LDtk 地图加载器 | ✅ | 解析 .ldtk JSON → 自动 tileset 加载 + 多层渲染 (Auto-Layer/IntGrid) |
+| 4-bit Autotile | ✅ | Godot/Tiled 规范位掩码 + Valley Ruin 16-tile 精确映射 |
 | 2D 相机控制器 | ✅ | 平滑跟随 + 死区 + 世界边界 + 缩放 + 屏幕震动 |
 | SpriteBatch | ✅ | 批量 2D 精灵渲染 (纹理/纯色/文字/图集子区域 UV) |
 | 2D 碰撞工具 | ✅ | MoveAndSlide 分轴碰撞 + AABB 四角检测 + CirclePush 实体推挤 |
@@ -99,6 +101,7 @@
 | 特性 | 状态 | 说明 |
 | --- | :---: | --- |
 | 贴图渲染 | ✅ | Valley Ruin Asset Pack 集成 (草地/泥土/石墙/栅栏) |
+| LDtk 地图编辑 | ✅ | 支持 .ldtk 文件加载，自动 tileset 加载 + autotile 渲染 |
 | 精灵帧动画 | ✅ | 玩家走路 8fps + Slime 弹跳 5fps + 篆火 6fps |
 | 分轴碰撞 | ✅ | MoveAndSlide 贴墙滑动 + AABB 四角检测 |
 | 实体推挤 | ✅ | 玩家-丧尸 CirclePush (70/30 推力分配) |
@@ -123,7 +126,7 @@ game/         ← 游戏框架库 (星露谷专属: 农场/NPC/对话/物品, �
 sandbox/      ← 测试沙盒应用 (链接: Sandbox → Game → Engine)
 ai/           ← 脚本逻辑层 (通用脚本 + 层级 AI 行为, 可选)
 data/         ← Java 数据层 (JNI 桥接, 可选)
-third_party/  ← 第三方依赖 (glfw, glad, glm, stb, imgui, cgltf, miniaudio, pybind11)
+third_party/  ← 第三方依赖 (glfw, glad, glm, stb, imgui, cgltf, miniaudio, pybind11, nlohmann/json)
 tests/        ← 单元测试 (Google Test)
 docs/         ← 文档与基准测试
 ```
@@ -271,6 +274,7 @@ cmake --build build
 | [cgltf](https://github.com/jkuhlmann/cgltf) | glTF 解析 | MIT |
 | [pybind11](https://github.com/pybind/pybind11) | C++/Python 桥接 | BSD |
 | [GLAD](https://glad.dav1d.de/) | OpenGL 加载 | MIT |
+| [nlohmann/json](https://github.com/nlohmann/json) | JSON 解析 (LDtk 地图加载) | MIT |
 
 ## 许可证
 

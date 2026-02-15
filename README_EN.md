@@ -73,8 +73,11 @@ A general-purpose 2D/3D game engine built from scratch in C/C++.
 | --- | :---: | --- |
 | Sprite2D + Animation | ✅ | SpriteSheet region slicing + SpriteAnimator multi-state management |
 | Tilemap | ✅ | Multi-layer Tilemap + AABB collision queries + frustum-culled rendering |
+| LDtk Map Loader | ✅ | Parse .ldtk JSON → auto tileset loading + multi-layer rendering (Auto-Layer/IntGrid) |
+| 4-bit Autotile | ✅ | Godot/Tiled-style bitmasking + Valley Ruin 16-tile precise mapping |
 | 2D Camera Controller | ✅ | Smooth follow + dead zone + world bounds + zoom + screen shake |
 | SpriteBatch | ✅ | Batched 2D sprite rendering (texture/solid color/text) |
+| 2D Collision Tools | ✅ | MoveAndSlide axis-based collision + AABB 4-corner detection + CirclePush entity pushing |
 | Orthographic Camera | ✅ | OrthographicCamera 2D projection |
 
 ### Stardew Valley Game Framework (game/ library)
@@ -110,7 +113,7 @@ game/         ← Game framework library (Stardew-specific: farming/NPC/dialogue
 sandbox/      ← Test sandbox application (links: Sandbox → Game → Engine)
 ai/           ← Script logic layer (generic scripts + hierarchical AI behavior, optional)
 data/         ← Java data layer (JNI bridge, optional)
-third_party/  ← Third-party dependencies (glfw, glad, glm, stb, imgui, cgltf, miniaudio, pybind11)
+third_party/  ← Third-party dependencies (glfw, glad, glm, stb, imgui, cgltf, miniaudio, pybind11, nlohmann/json)
 tests/        ← Unit tests (Google Test)
 docs/         ← Documentation & benchmarks
 ```
@@ -258,6 +261,7 @@ This project uses the following open-source libraries:
 | [cgltf](https://github.com/jkuhlmann/cgltf) | glTF parsing | MIT |
 | [pybind11](https://github.com/pybind/pybind11) | C++/Python bridge | BSD |
 | [GLAD](https://glad.dav1d.de/) | OpenGL loading | MIT |
+| [nlohmann/json](https://github.com/nlohmann/json) | JSON parsing (LDtk map loading) | MIT |
 
 ## License
 
