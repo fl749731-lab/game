@@ -1139,6 +1139,11 @@ bool GameLayer::LoadLdtkMap(const std::string& path) {
     for (auto& level : m_LdtkProject.levels) {
         for (auto& layer : level.layers) {
             if (layer.tilesetRelPath.empty()) continue;
+
+            // 统一 tileset 路径分隔符为 /
+            std::replace(layer.tilesetRelPath.begin(),
+                         layer.tilesetRelPath.end(), '\\', '/');
+
             if (m_LdtkTilesets.count(layer.tilesetRelPath)) continue;
 
             // 构建完整路径
@@ -1153,6 +1158,75 @@ bool GameLayer::LoadLdtkMap(const std::string& path) {
                 LOG_WARN("[LDtk] tileset 加载失败: %s", fullPath.c_str());
             }
             m_LdtkTilesets[layer.tilesetRelPath] = tex;
+        }
+    }
+
+    // ── IntGrid → NavGrid 碰撞同步 ───────────────────
+    // 查找名称包含 "Collision" 的 IntGrid 层
+    // IntGrid 值 > 0 的格子标记为不可行走
+    if (!m_LdtkProject.levels.empty()) {
+        auto& level = m_LdtkProject.levels[0];
+        for (auto& layer : level.layers) {
+            if (layer.type != "IntGrid") continue;
+            if (layer.identifier.find("Collision") == std::string::npos &&
+                layer.identifier.find("collision") == std::string::npos) continue;
+
+            if (layer.intGrid.empty()) continue;
+
+            // 重建 NavGrid 以匹配 LDtk 关卡尺寸
+            auto& nav = m_GameMap.GetNavGrid();
+            u32 navW = (u32)layer.gridW;
+            u32 navH = (u32)layer.gridH;
+            nav = NavGrid(navW, navH, 1.0f);
+
+            i32 count = 0;
+            for (i32 y = 0; y < layer.gridH; y++) {
+                for (i32 x = 0; x < layer.gridW; x++) {
+                    i32 idx = y * layer.gridW + x;
+                    if (idx >= (i32)layer.intGrid.size()) break;
+                    bool blocked = (layer.intGrid[idx] > 0);
+                    if (blocked) {
+                        nav.SetWalkable(x, y, false);
+                        count++;
+                    }
+                }
+            }
+            LOG_INFO("[LDtk] 碰撞层 '%s': %dx%d, %d 个不可行走格子",
+                     layer.identifier.c_str(), navW, navH, count);
+            break;  // 只使用第一个碰撞层
+        }
+
+        // ── Entity 层 → Spawn Points ───────────────────
+        for (auto& layer : level.layers) {
+            if (layer.type != "Entities") continue;
+            i32 gs = layer.gridSize > 0 ? layer.gridSize : m_LdtkProject.defaultGridSize;
+
+            for (auto& entity : layer.entities) {
+                f32 worldX = (f32)entity.px_x / (f32)gs;
+                f32 worldY = (f32)entity.px_y / (f32)gs;
+
+                if (entity.identifier == "PlayerSpawn") {
+                    // 设置玩家出生点
+                    LOG_INFO("[LDtk] 玩家出生点: (%.1f, %.1f)", worldX, worldY);
+                } else if (entity.identifier == "EnemySpawn" ||
+                           entity.identifier == "ZombieSpawn") {
+                    LOG_INFO("[LDtk] 敌人刷新点: (%.1f, %.1f)", worldX, worldY);
+                } else if (entity.identifier == "LootPoint") {
+                    LOG_INFO("[LDtk] 物资点: (%.1f, %.1f)", worldX, worldY);
+                } else {
+                    LOG_INFO("[LDtk] Entity '%s' at (%.1f, %.1f)",
+                             entity.identifier.c_str(), worldX, worldY);
+                }
+            }
+        }
+
+        // ── Level 边界 → 相机世界约束 ─────────────────
+        i32 gs = m_LdtkProject.defaultGridSize;
+        f32 levelW = (f32)level.pxWid / (f32)gs;
+        f32 levelH = (f32)level.pxHei / (f32)gs;
+        if (levelW > 0 && levelH > 0) {
+            m_CamCtrl.SetWorldBounds({0, 0}, {levelW, levelH});
+            LOG_INFO("[LDtk] 相机边界设为: %.0fx%.0f tiles", levelW, levelH);
         }
     }
 
@@ -1213,10 +1287,13 @@ void GameLayer::RenderLdtkMap() {
             f32 th = std::round(screenH - (worldY - camPos.y) * ppu) - sy;
 
             // UV 计算 (stbi Y 翻转: PNG top=0 → OpenGL v=1.0)
-            f32 u0 = tile.src_x / texW;
-            f32 u1 = (tile.src_x + gs) / texW;
-            f32 v0 = 1.0f - (tile.src_y + gs) / texH;
-            f32 v1 = 1.0f - tile.src_y / texH;
+            // half-pixel inset: 向内收缩 0.5 像素防止采样到相邻 tile
+            f32 halfPxU = 0.5f / texW;
+            f32 halfPxV = 0.5f / texH;
+            f32 u0 = tile.src_x / texW + halfPxU;
+            f32 u1 = (tile.src_x + gs) / texW - halfPxU;
+            f32 v0 = 1.0f - (tile.src_y + gs) / texH + halfPxV;
+            f32 v1 = 1.0f - tile.src_y / texH - halfPxV;
 
             // 翻转处理
             if (tile.flip & 1) std::swap(u0, u1); // 水平翻转

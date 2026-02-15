@@ -87,12 +87,18 @@ static u32 s_WhiteTexture = 0;
 static SpriteVertex* s_VertexBuffer = nullptr;
 static SpriteVertex* s_VertexPtr = nullptr;
 static u32 s_QuadCount = 0;
+static u32 s_TotalQuadCount = 0;  // 累计统计
 static u32 s_DrawCalls = 0;
 
 static u32 s_TextureSlots[SpriteBatch::MAX_TEXTURE_SLOTS];
 static u32 s_TextureSlotIndex = 1; // slot 0 = 白色纹理
 
 static glm::mat4 s_Projection = glm::mat4(1.0f);
+
+// GL 状态备份 (Begin 保存, End 恢复)
+static GLint s_PrevDepthTest = 0;
+static GLint s_PrevBlend = 0;
+static GLint s_PrevCullFace = 0;
 
 // ── 初始化 ──────────────────────────────────────────────────
 
@@ -187,6 +193,18 @@ void SpriteBatch::Shutdown() {
 void SpriteBatch::Begin(u32 screenWidth, u32 screenHeight) {
     s_Projection = glm::ortho(0.0f, (f32)screenWidth, (f32)screenHeight, 0.0f, -1.0f, 1.0f);
     s_DrawCalls = 0;
+    s_TotalQuadCount = 0;
+
+    // 保存 GL 状态 (一次性, 不在每次 Flush 中重复)
+    glGetIntegerv(GL_DEPTH_TEST, &s_PrevDepthTest);
+    glGetIntegerv(GL_BLEND, &s_PrevBlend);
+    glGetIntegerv(GL_CULL_FACE, &s_PrevCullFace);
+
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     StartBatch();
 }
 
@@ -198,6 +216,11 @@ void SpriteBatch::StartBatch() {
 
 void SpriteBatch::End() {
     Flush();
+
+    // 恢复 GL 状态 (一次性)
+    if (s_PrevDepthTest) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    if (s_PrevCullFace) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+    if (!s_PrevBlend) glDisable(GL_BLEND);
 }
 
 void SpriteBatch::Flush() {
@@ -219,27 +242,12 @@ void SpriteBatch::Flush() {
     s_Shader->Bind();
     s_Shader->SetMat4("uProjection", glm::value_ptr(s_Projection));
 
-    // 保存当前 GL 状态
-    GLint prevDepthTest, prevBlend, prevCullFace;
-    glGetIntegerv(GL_DEPTH_TEST, &prevDepthTest);
-    glGetIntegerv(GL_BLEND, &prevBlend);
-    glGetIntegerv(GL_CULL_FACE, &prevCullFace);
-
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);   // 2D 四边形不需要面剔除
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
     glBindVertexArray(s_VAO);
     glDrawElements(GL_TRIANGLES, s_QuadCount * 6, GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
 
-    // 恢复 GL 状态
-    if (prevDepthTest) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
-    if (prevCullFace) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
-    if (!prevBlend) glDisable(GL_BLEND);
-
     s_DrawCalls++;
+    s_TotalQuadCount += s_QuadCount;
     StartBatch();
 }
 
@@ -417,6 +425,6 @@ void SpriteBatch::DrawText(Font& font,
 // ── 统计 ────────────────────────────────────────────────────
 
 u32 SpriteBatch::GetDrawCallCount() { return s_DrawCalls; }
-u32 SpriteBatch::GetQuadCount()     { return s_QuadCount; }
+u32 SpriteBatch::GetQuadCount()     { return s_TotalQuadCount; }
 
 } // namespace Engine

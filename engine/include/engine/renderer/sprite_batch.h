@@ -62,7 +62,7 @@ public:
     static u32 GetQuadCount();
 
     /// 常量
-    static constexpr u32 MAX_QUADS = 1000;
+    static constexpr u32 MAX_QUADS = 10000;
     static constexpr u32 MAX_VERTICES = MAX_QUADS * 4;
     static constexpr u32 MAX_INDICES = MAX_QUADS * 6;
     static constexpr u32 MAX_TEXTURE_SLOTS = 16;

@@ -10,6 +10,11 @@ using json = nlohmann::json;
 namespace Engine {
 
 bool LdtkLoader::Load(const std::string& path, LdtkProject& project) {
+    // ── 清空旧数据 (支持重新加载) ────────────────────
+    project.levels.clear();
+    project.basePath.clear();
+    project.defaultGridSize = 16;
+
     // ── 读取 JSON 文件 ─────────────────────────────
     std::ifstream file(path);
     if (!file.is_open()) {
@@ -29,7 +34,9 @@ bool LdtkLoader::Load(const std::string& path, LdtkProject& project) {
     // ── 基路径 ─────────────────────────────────────
     std::filesystem::path fsPath(path);
     project.basePath = fsPath.parent_path().string();
-    if (!project.basePath.empty() && project.basePath.back() != '/' && project.basePath.back() != '\\') {
+    // 统一路径分隔符为 /
+    std::replace(project.basePath.begin(), project.basePath.end(), '\\', '/');
+    if (!project.basePath.empty() && project.basePath.back() != '/') {
         project.basePath += '/';
     }
 
@@ -53,7 +60,11 @@ bool LdtkLoader::Load(const std::string& path, LdtkProject& project) {
     }
 
     // ── 解析 Levels ────────────────────────────────
-    const auto& levels = root.contains("levels") ? root["levels"] : root["levels"];
+    if (!root.contains("levels") || !root["levels"].is_array()) {
+        LOG_WARN("[LDtk] 项目中无 levels 数组");
+        return true;  // 合法的空项目
+    }
+    const auto& levels = root["levels"];
 
     for (auto& lvl : levels) {
         LdtkLevel level;
@@ -124,9 +135,51 @@ bool LdtkLoader::Load(const std::string& path, LdtkProject& project) {
                 }
             }
 
-            LOG_INFO("[LDtk]     Layer: %s (%s) %dx%d, %zu tiles",
+            // ── Entity 实例 (spawn point/NPC/物品等) ───
+            if (li.contains("entityInstances")) {
+                for (auto& ei : li["entityInstances"]) {
+                    LdtkEntity entity;
+                    entity.identifier = ei.value("__identifier", "");
+
+                    if (ei.contains("px") && ei["px"].size() >= 2) {
+                        entity.px_x = ei["px"][0].get<i32>();
+                        entity.px_y = ei["px"][1].get<i32>();
+                    }
+                    entity.width  = ei.value("width", 16);
+                    entity.height = ei.value("height", 16);
+
+                    if (ei.contains("__pivot") && ei["__pivot"].size() >= 2) {
+                        entity.pivotX = ei["__pivot"][0].get<f32>();
+                        entity.pivotY = ei["__pivot"][1].get<f32>();
+                    }
+
+                    // 解析自定义字段
+                    if (ei.contains("fieldInstances")) {
+                        for (auto& fi : ei["fieldInstances"]) {
+                            std::string fid = fi.value("__identifier", "");
+                            std::string ftype = fi.value("__type", "");
+                            if (fid.empty() || fi["__value"].is_null()) continue;
+
+                            if (ftype == "Int" || ftype == "Integer") {
+                                entity.fields[fid] = fi["__value"].get<i32>();
+                            } else if (ftype == "Float") {
+                                entity.fields[fid] = fi["__value"].get<f32>();
+                            } else if (ftype == "Bool" || ftype == "Boolean") {
+                                entity.fields[fid] = fi["__value"].get<bool>();
+                            } else if (ftype == "String" || ftype == "Enum") {
+                                entity.fields[fid] = fi["__value"].get<std::string>();
+                            }
+                        }
+                    }
+
+                    layer.entities.push_back(std::move(entity));
+                }
+            }
+
+            LOG_INFO("[LDtk]     Layer: %s (%s) %dx%d, %zu tiles, %zu entities",
                      layer.identifier.c_str(), layer.type.c_str(),
-                     layer.gridW, layer.gridH, layer.tiles.size());
+                     layer.gridW, layer.gridH, layer.tiles.size(),
+                     layer.entities.size());
 
             level.layers.push_back(std::move(layer));
         }
