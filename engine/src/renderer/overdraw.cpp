@@ -70,11 +70,18 @@ static u32 CompileShader(GLenum type, const char* src) {
         char log[512];
         glGetShaderInfoLog(shader, 512, nullptr, log);
         LOG_ERROR("[Overdraw] 着色器编译失败: %s", log);
+        glDeleteShader(shader);
+        return 0;
     }
     return shader;
 }
 
 static u32 LinkProgram(u32 vs, u32 fs) {
+    if (!vs || !fs) {
+        if (vs) glDeleteShader(vs);
+        if (fs) glDeleteShader(fs);
+        return 0;
+    }
     u32 prog = glCreateProgram();
     glAttachShader(prog, vs);
     glAttachShader(prog, fs);
