@@ -52,6 +52,11 @@ public:
     u32 GetWidth()  const { return m_Tilemap.GetWidth(); }
     u32 GetHeight() const { return m_Tilemap.GetHeight(); }
 
+    void SetPlayerSpawn(glm::vec2 p) { m_PlayerSpawn = p; }
+    void AddZombieSpawn(glm::vec2 p) { m_ZombieSpawns.push_back(p); }
+    void AddLootPoint(glm::vec2 p) { m_LootPoints.push_back(p); }
+    void ClearSpawns() { m_ZombieSpawns.clear(); m_LootPoints.clear(); }
+
 private:
     /// 内部: 放置一个矩形房间
     void PlaceRoom(u32 x, u32 y, u32 w, u32 h);

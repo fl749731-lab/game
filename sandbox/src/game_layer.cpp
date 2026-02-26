@@ -70,6 +70,13 @@ void GameLayer::OnAttach() {
     // ── 注册建造配方 (必须在 m_BuildingSys 初始化之后) ────
     RegisterRecipes();
 
+    // ── 尝试加载 LDtk 地图 ─────────────────────────
+    if (LoadLdtkMap("assets/maps/world.ldtk")) {
+        LOG_INFO("[GameLayer] LDtk 地图加载成功, 使用 LDtk 渲染");
+    } else {
+        LOG_INFO("[GameLayer] LDtk 地图未找到, 使用程序化地图");
+    }
+
     // ── 创建玩家 ─────────────────────────────────────────
     SetupPlayer();
 
@@ -118,13 +125,6 @@ void GameLayer::OnAttach() {
     m_AutoSand      = CreateStandardAutotile(176.0f, 80.0f);
     m_AutoRock      = CreateStandardAutotile(176.0f, 80.0f);
     m_AutoWater     = CreateStandardAutotile(176.0f, 80.0f);
-
-    // ── 尝试加载 LDtk 地图 ─────────────────────────
-    if (LoadLdtkMap("assets/maps/world.ldtk")) {
-        LOG_INFO("[GameLayer] LDtk 地图加载成功, 使用 LDtk 渲染");
-    } else {
-        LOG_INFO("[GameLayer] LDtk 地图未找到, 使用程序化地图");
-    }
 
     LOG_INFO("[GameLayer] 丧尸生存原型启动!");
 }
@@ -1179,15 +1179,25 @@ bool GameLayer::LoadLdtkMap(const std::string& path) {
             u32 navH = (u32)layer.gridH;
             nav = NavGrid(navW, navH, 1.0f);
 
+            // 同时初始化 Tilemap 以用于物理碰撞
+            auto& tilemap = m_GameMap.GetTilemap();
+            tilemap = Tilemap(navW, navH, 16);
+            tilemap.AddLayer("collisions", 0);
+
             i32 count = 0;
             for (i32 y = 0; y < layer.gridH; y++) {
                 for (i32 x = 0; x < layer.gridW; x++) {
                     i32 idx = y * layer.gridW + x;
                     if (idx >= (i32)layer.intGrid.size()) break;
                     bool blocked = (layer.intGrid[idx] > 0);
+                    i32 flippedY = navH - 1 - y; // 翻转Y轴适配引擎底左原点
                     if (blocked) {
-                        nav.SetWalkable(x, y, false);
+                        nav.SetWalkable(x, flippedY, false);
+                        tilemap.SetTile(0, x, flippedY, {1}); // 设置为墙体产生碰撞
                         count++;
+                    } else {
+                        nav.SetWalkable(x, flippedY, true);
+                        tilemap.SetTile(0, x, flippedY, {0}); // 空地
                     }
                 }
             }
@@ -1197,21 +1207,28 @@ bool GameLayer::LoadLdtkMap(const std::string& path) {
         }
 
         // ── Entity 层 → Spawn Points ───────────────────
+        m_GameMap.ClearSpawns();
+
         for (auto& layer : level.layers) {
             if (layer.type != "Entities") continue;
             i32 gs = layer.gridSize > 0 ? layer.gridSize : m_LdtkProject.defaultGridSize;
+            f32 levelH = (f32)level.pxHei / (f32)gs;
 
             for (auto& entity : layer.entities) {
                 f32 worldX = (f32)entity.px_x / (f32)gs;
-                f32 worldY = (f32)entity.px_y / (f32)gs;
+                f32 entityH = (f32)entity.height / (f32)gs;
+                f32 worldY = levelH - ((f32)entity.px_y / (f32)gs) - entityH; // 翻转Y轴适配引擎的自下而上原点
 
                 if (entity.identifier == "PlayerSpawn") {
+                    m_GameMap.SetPlayerSpawn({worldX, worldY});
                     // 设置玩家出生点
                     LOG_INFO("[LDtk] 玩家出生点: (%.1f, %.1f)", worldX, worldY);
                 } else if (entity.identifier == "EnemySpawn" ||
                            entity.identifier == "ZombieSpawn") {
+                    m_GameMap.AddZombieSpawn({worldX, worldY});
                     LOG_INFO("[LDtk] 敌人刷新点: (%.1f, %.1f)", worldX, worldY);
                 } else if (entity.identifier == "LootPoint") {
+                    m_GameMap.AddLootPoint({worldX, worldY});
                     LOG_INFO("[LDtk] 物资点: (%.1f, %.1f)", worldX, worldY);
                 } else {
                     LOG_INFO("[LDtk] Entity '%s' at (%.1f, %.1f)",
@@ -1280,10 +1297,12 @@ void GameLayer::RenderLdtkMap() {
         // 层透明度
         glm::vec4 layerTint = glm::vec4(1.0f, 1.0f, 1.0f, layer.opacity);
 
+        f32 levelH = (f32)level.pxHei / (f32)gs;
+
         for (auto& tile : layer.tiles) {
             // tile 世界坐标 (单位: tile)
             f32 worldX = (f32)tile.px_x / gs;
-            f32 worldY = (f32)tile.px_y / gs;
+            f32 worldY = levelH - ((f32)tile.px_y / gs) - tileWorldSize; // 翻转Y轴
 
             // 视锥裁剪 (使用视差调整后的相机位置)
             if (worldX + tileWorldSize < layerCamX || worldX > layerCamX + layerViewW) continue;
