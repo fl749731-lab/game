@@ -519,6 +519,9 @@ void SceneRenderer::RenderEntitiesDeferred(Scene& scene, PerspectiveCamera& came
         BatchInstanceData inst;
         inst.Model = tr->WorldMatrix;
 
+        auto* meshPtr = ResourceManager::GetMesh(rc->MeshType);
+        if (!meshPtr) continue; // 不渲染没有 mesh 的实体
+        
         auto* mat = world.GetComponent<MaterialComponent>(e);
         if (mat) {
             inst.Albedo = {mat->DiffuseR, mat->DiffuseG, mat->DiffuseB, mat->Metallic};
@@ -529,7 +532,11 @@ void SceneRenderer::RenderEntitiesDeferred(Scene& scene, PerspectiveCamera& came
                 mat->NormalMapName.empty() ? 0.0f : 1.0f,
                 mat->Emissive ? 1.0f : 0.0f
             };
-            BatchRenderer::Submit(rc->MeshType, mat->TextureName, mat->NormalMapName, inst);
+            
+            auto texPtr = mat->TextureName.empty() ? nullptr : ResourceManager::GetTexture(mat->TextureName).get();
+            auto nmapPtr = mat->NormalMapName.empty() ? nullptr : ResourceManager::GetTexture(mat->NormalMapName).get();
+            
+            BatchRenderer::Submit(meshPtr, texPtr, nmapPtr, inst);
         } else {
             // 旧兼容路径 → 默认材质
             inst.Albedo = {rc->ColorR, rc->ColorG, rc->ColorB, 0.0f};
@@ -541,7 +548,10 @@ void SceneRenderer::RenderEntitiesDeferred(Scene& scene, PerspectiveCamera& came
                 0.0f,
                 0.0f
             };
-            BatchRenderer::Submit(rc->MeshType, texName, "", inst);
+            
+            auto texPtr = texName.empty() ? nullptr : ResourceManager::GetTexture(texName).get();
+            
+            BatchRenderer::Submit(meshPtr, texPtr, nullptr, inst);
         }
     }
 

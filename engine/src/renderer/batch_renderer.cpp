@@ -60,11 +60,11 @@ void BatchRenderer::Begin(Shader* shader) {
     }
 }
 
-void BatchRenderer::Submit(const std::string& meshType,
-                           const std::string& textureName,
-                           const std::string& normalMapName,
+void BatchRenderer::Submit(Mesh* meshPtr,
+                           Texture2D* texturePtr,
+                           Texture2D* normalMapPtr,
                            const BatchInstanceData& data) {
-    BatchKey key{meshType, textureName, normalMapName};
+    BatchKey key{meshPtr, texturePtr, normalMapPtr};
     s_Batches[key].Instances.push_back(data);
 }
 
@@ -79,18 +79,18 @@ void BatchRenderer::End() {
         if (group.Instances.empty()) continue;
 
         // 获取对应 Mesh
-        auto* mesh = ResourceManager::GetMesh(key.MeshType);
+        auto* mesh = key.MeshPtr;
         if (!mesh) continue;
 
         // 绑定纹理 (整个批次共享)
-        if (!key.TextureName.empty()) {
-            auto tex = ResourceManager::GetTexture(key.TextureName);
-            if (tex) { tex->Bind(0); s_CurrentShader->SetInt("uTex", 0); }
+        if (key.TexturePtr) {
+            key.TexturePtr->Bind(0); 
+            s_CurrentShader->SetInt("uTex", 0); 
         }
 
-        if (!key.NormalMapName.empty()) {
-            auto nmap = ResourceManager::GetTexture(key.NormalMapName);
-            if (nmap) { nmap->Bind(2); s_CurrentShader->SetInt("uNormalMap", 2); }
+        if (key.NormalMapPtr) {
+            key.NormalMapPtr->Bind(2); 
+            s_CurrentShader->SetInt("uNormalMap", 2); 
         }
 
         // 分块上传（避免超过 GPU 缓冲区大小）
@@ -100,8 +100,11 @@ void BatchRenderer::End() {
         while (offset < totalInstances) {
             u32 batchSize = std::min(totalInstances - offset, s_MaxInstances);
 
-            // 上传实例数据
+            // 缓冲区孤立 (Buffer Orphaning) 以避免 GPU 等待
             glBindBuffer(GL_ARRAY_BUFFER, s_InstanceVBO);
+            glBufferData(GL_ARRAY_BUFFER, s_MaxInstances * sizeof(BatchInstanceData), nullptr, GL_DYNAMIC_DRAW);
+            
+            // 上传实例数据
             glBufferSubData(GL_ARRAY_BUFFER, 0,
                             batchSize * sizeof(BatchInstanceData),
                             &group.Instances[offset]);

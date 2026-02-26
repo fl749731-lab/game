@@ -234,8 +234,11 @@ void SpriteBatch::Flush() {
         glBindTexture(GL_TEXTURE_2D, s_TextureSlots[i]);
     }
 
-    // 上传顶点
+    // 缓冲区孤立 (Buffer Orphaning) 以避免 GPU 同步等待
     glBindBuffer(GL_ARRAY_BUFFER, s_VBO);
+    glBufferData(GL_ARRAY_BUFFER, MAX_VERTICES * sizeof(SpriteVertex), nullptr, GL_DYNAMIC_DRAW);
+    
+    // 上传顶点
     glBufferSubData(GL_ARRAY_BUFFER, 0, dataSize, s_VertexBuffer);
 
     // 渲染

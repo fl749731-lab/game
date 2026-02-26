@@ -11,6 +11,8 @@
 
 namespace Engine {
 
+class Texture2D;
+
 // ── 批处理实例数据 ──────────────────────────────────────────
 //
 // 每个实例携带 Model 矩阵 + PBR 材质参数。
@@ -30,22 +32,22 @@ struct BatchInstanceData {
 // ── 批处理渲染键 ────────────────────────────────────────────
 
 struct BatchKey {
-    std::string MeshType;
-    std::string TextureName;
-    std::string NormalMapName;
+    Mesh* MeshPtr;
+    Texture2D* TexturePtr;
+    Texture2D* NormalMapPtr;
 
     bool operator==(const BatchKey& other) const {
-        return MeshType == other.MeshType &&
-               TextureName == other.TextureName &&
-               NormalMapName == other.NormalMapName;
+        return MeshPtr == other.MeshPtr &&
+               TexturePtr == other.TexturePtr &&
+               NormalMapPtr == other.NormalMapPtr;
     }
 };
 
 struct BatchKeyHash {
     size_t operator()(const BatchKey& k) const {
-        size_t h1 = std::hash<std::string>{}(k.MeshType);
-        size_t h2 = std::hash<std::string>{}(k.TextureName);
-        size_t h3 = std::hash<std::string>{}(k.NormalMapName);
+        size_t h1 = std::hash<Mesh*>{}(k.MeshPtr);
+        size_t h2 = std::hash<Texture2D*>{}(k.TexturePtr);
+        size_t h3 = std::hash<Texture2D*>{}(k.NormalMapPtr);
         return h1 ^ (h2 << 1) ^ (h3 << 2);
     }
 };
@@ -69,9 +71,9 @@ public:
     static void Begin(Shader* shader);
 
     /// 提交一个实例
-    static void Submit(const std::string& meshType,
-                       const std::string& textureName,
-                       const std::string& normalMapName,
+    static void Submit(Mesh* meshPtr,
+                       Texture2D* texturePtr,
+                       Texture2D* normalMapPtr,
                        const BatchInstanceData& data);
 
     /// 刷新所有批次 (每组一次 DrawCall)
