@@ -1,5 +1,6 @@
 #include "engine/renderer/sprite_batch.h"
 #include "engine/renderer/font.h"
+#include "engine/core/application.h"
 #include "engine/core/log.h"
 
 #include <glad/glad.h>
@@ -9,6 +10,17 @@
 #include <cmath>
 
 namespace Engine {
+
+static bool IsOpenGLBackend() {
+    return Application::Get().GetBackend() == GraphicsBackend::OpenGL;
+}
+
+static void LogNoopOnce(const char* action) {
+    static bool s_Logged = false;
+    if (s_Logged) return;
+    LOG_WARN("[SpriteBatch] %s 在 Vulkan 模式下为 no-op (待迁移)", action);
+    s_Logged = true;
+}
 
 // ── 顶点结构 ────────────────────────────────────────────────
 
@@ -103,6 +115,11 @@ static GLint s_PrevCullFace = 0;
 // ── 初始化 ──────────────────────────────────────────────────
 
 void SpriteBatch::Init() {
+    if (!IsOpenGLBackend()) {
+        LogNoopOnce("Init");
+        return;
+    }
+
     // 顶点缓冲
     s_VertexBuffer = new SpriteVertex[MAX_VERTICES];
 
@@ -177,6 +194,8 @@ void SpriteBatch::Init() {
 }
 
 void SpriteBatch::Shutdown() {
+    if (!IsOpenGLBackend()) return;
+
     delete[] s_VertexBuffer;
     s_VertexBuffer = nullptr;
 
@@ -191,6 +210,12 @@ void SpriteBatch::Shutdown() {
 // ── 开始/结束 ───────────────────────────────────────────────
 
 void SpriteBatch::Begin(u32 screenWidth, u32 screenHeight) {
+    if (!IsOpenGLBackend()) {
+        s_DrawCalls = 0;
+        s_TotalQuadCount = 0;
+        return;
+    }
+
     s_Projection = glm::ortho(0.0f, (f32)screenWidth, (f32)screenHeight, 0.0f, -1.0f, 1.0f);
     s_DrawCalls = 0;
     s_TotalQuadCount = 0;
@@ -209,12 +234,16 @@ void SpriteBatch::Begin(u32 screenWidth, u32 screenHeight) {
 }
 
 void SpriteBatch::StartBatch() {
+    if (!IsOpenGLBackend()) return;
+
     s_QuadCount = 0;
     s_VertexPtr = s_VertexBuffer;
     s_TextureSlotIndex = 1;
 }
 
 void SpriteBatch::End() {
+    if (!IsOpenGLBackend()) return;
+
     Flush();
 
     // 恢复 GL 状态 (一次性)
@@ -224,6 +253,8 @@ void SpriteBatch::End() {
 }
 
 void SpriteBatch::Flush() {
+    if (!IsOpenGLBackend()) return;
+
     if (s_QuadCount == 0) return;
 
     u32 dataSize = (u32)((u8*)s_VertexPtr - (u8*)s_VertexBuffer);
@@ -261,6 +292,8 @@ void SpriteBatch::Draw(Ref<Texture2D> texture,
                        const glm::vec2& size,
                        f32 rotation,
                        const glm::vec4& tint) {
+    if (!IsOpenGLBackend()) return;
+
     // 默认 UV: 全图
     Draw(texture, position, size, {0.0f, 0.0f, 1.0f, 1.0f}, rotation, tint);
 }
@@ -271,6 +304,8 @@ void SpriteBatch::Draw(Ref<Texture2D> texture,
                        const glm::vec4& uvRect,
                        f32 rotation,
                        const glm::vec4& tint) {
+    if (!IsOpenGLBackend()) return;
+
     if (s_QuadCount >= MAX_QUADS) Flush();
 
     // 查找或分配纹理槽位
@@ -342,6 +377,8 @@ void SpriteBatch::DrawRect(const glm::vec2& position,
                            const glm::vec2& size,
                            const glm::vec4& color,
                            f32 rotation) {
+    if (!IsOpenGLBackend()) return;
+
     Draw(nullptr, position, size, rotation, color);
 }
 
@@ -350,6 +387,8 @@ void SpriteBatch::DrawText(Font& font,
                            const glm::vec2& position,
                            f32 scale,
                            const glm::vec4& color) {
+    if (!IsOpenGLBackend()) return;
+
     if (!font.IsValid()) return;
 
     // 查找或分配字体纹理槽位
@@ -427,7 +466,14 @@ void SpriteBatch::DrawText(Font& font,
 
 // ── 统计 ────────────────────────────────────────────────────
 
-u32 SpriteBatch::GetDrawCallCount() { return s_DrawCalls; }
-u32 SpriteBatch::GetQuadCount()     { return s_TotalQuadCount; }
+u32 SpriteBatch::GetDrawCallCount() {
+    if (!IsOpenGLBackend()) return 0;
+    return s_DrawCalls;
+}
+
+u32 SpriteBatch::GetQuadCount() {
+    if (!IsOpenGLBackend()) return 0;
+    return s_TotalQuadCount;
+}
 
 } // namespace Engine
