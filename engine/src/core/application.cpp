@@ -17,6 +17,7 @@
 #include "engine/debug/debug_draw.h"
 #include "engine/debug/debug_ui.h"
 #include "engine/debug/profiler.h"
+#include "engine/renderer/vulkan/vulkan_context.h"
 
 namespace Engine {
 
@@ -25,13 +26,14 @@ Application* Application::s_Instance = nullptr;
 // ── 构造 ────────────────────────────────────────────────────
 
 Application::Application(const ApplicationConfig& config)
-    : m_Window(WindowConfig{config.Title, config.Width, config.Height, config.VSync})
+    : m_Window(WindowConfig{config.Title, config.Width, config.Height, config.VSync, config.Backend})
 {
     if (s_Instance) {
         LOG_ERROR("[Application] 重复创建！只允许一个实例");
         return;
     }
     s_Instance = this;
+    m_Backend = config.Backend;
 
     Logger::Init();
     LOG_INFO("=== 引擎 Application 初始化 ===");
@@ -62,11 +64,44 @@ Application::~Application() {
 void Application::InitSubsystems() {
     FrameAllocator::Init();  // 4MB 帧分配器
     Input::Init(m_Window.GetNativeWindow());
-    Renderer::Init();
-    Skybox::Init();
-    ParticleSystem::Init();
+
+    if (m_Backend == GraphicsBackend::Vulkan) {
+#ifdef ENGINE_ENABLE_VULKAN
+        VulkanContextConfig vkConfig;
+        vkConfig.AppName = "Game Engine";
+        vkConfig.Validation =
+#ifdef ENGINE_DEBUG
+            true;
+#else
+            false;
+#endif
+        vkConfig.Width = m_Window.GetWidth();
+        vkConfig.Height = m_Window.GetHeight();
+        vkConfig.Window = m_Window.GetNativeWindow();
+        if (!VulkanRenderer::Init(vkConfig)) {
+            LOG_FATAL("[Application] VulkanRenderer 初始化失败");
+            return;
+        }
+#else
+        LOG_FATAL("[Application] 选择了 Vulkan 后端，但当前构建未启用 Vulkan");
+        return;
+#endif
+    } else {
+        Renderer::Init();
+    }
+
+    if (m_Backend == GraphicsBackend::OpenGL) {
+        Skybox::Init();
+        ParticleSystem::Init();
+        SpriteBatch::Init();
+        DebugDraw::Init();
+        DebugUI::Init();
+        ShaderLibrary::Init();
+    } else {
+        LOG_WARN("[Application] Vulkan 路径暂不启用 OpenGL 专属模块 (Skybox/Particle/SpriteBatch/DebugUI)");
+    }
+
     AudioEngine::Init();
-    SpriteBatch::Init();
 
     JobSystem::Init();
     AsyncLoader::Init();
@@ -77,13 +112,6 @@ void Application::InitSubsystems() {
     renderCfg.Height = m_Window.GetHeight();
     SceneRenderer::Init(renderCfg);
 
-    // 调试工具
-    DebugDraw::Init();
-    DebugUI::Init();
-
-    // Shader 库 (Debug 模式支持热重载)
-    ShaderLibrary::Init();
-
     LOG_INFO("[Application] 所有子系统已初始化");
 }
 
@@ -91,19 +119,28 @@ void Application::ShutdownSubsystems() {
 #ifdef ENGINE_HAS_PYTHON
     // PythonEngine 由 Layer 自行管理
 #endif
-    ShaderLibrary::Shutdown();
-    DebugUI::Shutdown();
-    DebugDraw::Shutdown();
-    SpriteBatch::Shutdown();
-    ParticleSystem::Shutdown();
+    if (m_Backend == GraphicsBackend::OpenGL) {
+        ShaderLibrary::Shutdown();
+        DebugUI::Shutdown();
+        DebugDraw::Shutdown();
+        SpriteBatch::Shutdown();
+        ParticleSystem::Shutdown();
+        Skybox::Shutdown();
+    }
+
     AudioEngine::Shutdown();
-    Skybox::Shutdown();
     SceneRenderer::Shutdown();
     AsyncLoader::Shutdown();
     JobSystem::Shutdown();
     SceneManager::Clear();
     ResourceManager::Clear();
-    Renderer::Shutdown();
+    if (m_Backend == GraphicsBackend::Vulkan) {
+#ifdef ENGINE_ENABLE_VULKAN
+        VulkanRenderer::Shutdown();
+#endif
+    } else {
+        Renderer::Shutdown();
+    }
     FrameAllocator::Shutdown();
 }
 
@@ -113,6 +150,12 @@ void Application::Run() {
     LOG_INFO("[Application] 进入主循环");
 
     while (m_Running && !m_Window.ShouldClose()) {
+#ifdef ENGINE_ENABLE_VULKAN
+        if (m_Backend == GraphicsBackend::Vulkan) {
+            VulkanRenderer::BeginFrame();
+        }
+#endif
+
         Time::Update();
         Input::Update();
         Renderer::ResetStats();
@@ -142,6 +185,12 @@ void Application::Run() {
         for (auto& layer : m_Layers) {
             layer->OnImGui();
         }
+
+#ifdef ENGINE_ENABLE_VULKAN
+        if (m_Backend == GraphicsBackend::Vulkan) {
+            VulkanRenderer::EndFrame();
+        }
+#endif
 
         Profiler::EndFrame();
         m_Window.Update();

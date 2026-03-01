@@ -1,4 +1,5 @@
 #include "engine/renderer/scene_renderer.h"
+#include "engine/core/application.h"
 #include "engine/renderer/batch_renderer.h"
 #include "engine/renderer/shaders.h"
 #include "engine/renderer/renderer.h"
@@ -14,6 +15,7 @@
 #include "engine/renderer/frustum.h"
 #include "engine/renderer/g_buffer.h"
 #include "engine/renderer/screen_quad.h"
+#include "engine/renderer/vulkan/vulkan_scene_renderer.h"
 #include "engine/core/resource_manager.h"
 #include "engine/core/log.h"
 #include "engine/core/time.h"
@@ -66,6 +68,24 @@ SceneFrameStats SceneRenderer::s_FrameStats = {};
 // ── 初始化 ──────────────────────────────────────────────────
 
 void SceneRenderer::Init(const SceneRendererConfig& config) {
+    if (Application::Get().GetBackend() == GraphicsBackend::Vulkan) {
+#ifdef ENGINE_ENABLE_VULKAN
+        VulkanSceneConfig vkCfg;
+        vkCfg.Width = config.Width;
+        vkCfg.Height = config.Height;
+        if (!VulkanSceneRenderer::Init(vkCfg)) {
+            LOG_ERROR("[SceneRenderer] VulkanSceneRenderer 初始化失败");
+        }
+#else
+        LOG_ERROR("[SceneRenderer] 当前构建未启用 Vulkan");
+#endif
+        s_Width  = config.Width;
+        s_Height = config.Height;
+        s_Exposure = config.Exposure;
+        s_BloomEnabled = config.BloomEnabled;
+        return;
+    }
+
     s_Width  = config.Width;
     s_Height = config.Height;
     s_Exposure = config.Exposure;
@@ -159,6 +179,13 @@ void SceneRenderer::Init(const SceneRendererConfig& config) {
 }
 
 void SceneRenderer::Shutdown() {
+    if (Application::Get().GetBackend() == GraphicsBackend::Vulkan) {
+#ifdef ENGINE_ENABLE_VULKAN
+        VulkanSceneRenderer::Shutdown();
+#endif
+        return;
+    }
+
     // 棋盘纹理由 ResourceManager 管理，无需手动删除
     s_CheckerTexID = 0;
     s_HDR_FBO.reset();
@@ -181,6 +208,15 @@ void SceneRenderer::Shutdown() {
 }
 
 void SceneRenderer::Resize(u32 width, u32 height) {
+    if (Application::Get().GetBackend() == GraphicsBackend::Vulkan) {
+#ifdef ENGINE_ENABLE_VULKAN
+        VulkanSceneRenderer::OnResize(width, height);
+#endif
+        s_Width = width;
+        s_Height = height;
+        return;
+    }
+
     s_Width  = width;
     s_Height = height;
     if (s_HDR_FBO) s_HDR_FBO->Resize(width, height);
@@ -194,6 +230,13 @@ void SceneRenderer::Resize(u32 width, u32 height) {
 // ── 核心渲染方法 ────────────────────────────────────────────
 
 void SceneRenderer::RenderScene(Scene& scene, PerspectiveCamera& camera) {
+    if (Application::Get().GetBackend() == GraphicsBackend::Vulkan) {
+#ifdef ENGINE_ENABLE_VULKAN
+        VulkanSceneRenderer::RenderScene(scene, camera);
+#endif
+        return;
+    }
+
     Profiler::BeginTimer("Render");
     s_FrameStats = {};  // 重置帧统计
 

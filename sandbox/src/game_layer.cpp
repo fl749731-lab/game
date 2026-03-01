@@ -1,4 +1,6 @@
 #include "game_layer.h"
+#include "engine/core/application.h"
+#include "engine/renderer/vulkan/vulkan_context.h"
 #include "engine/renderer/sprite_batch.h"
 #include "engine/platform/input.h"
 #include "engine/game2d/collision2d.h"
@@ -612,6 +614,25 @@ void GameLayer::CleanupDeadZombies() {
 // ══════════════════════════════════════════════════════════════
 
 void GameLayer::OnRender() {
+    if (Application::Get().GetBackend() == GraphicsBackend::Vulkan) {
+#ifdef ENGINE_ENABLE_VULKAN
+        // 最小 Vulkan 可视化路径：先以动态清屏色确认渲染循环稳定
+        bool isNight = (m_TimeSys && m_TimeSys->IsNight());
+        if (isNight) {
+            VulkanRenderer::SetClearColor(0.03f, 0.04f, 0.08f, 1.0f);
+        } else {
+            VulkanRenderer::SetClearColor(0.08f, 0.12f, 0.08f, 1.0f);
+        }
+
+        static bool s_LoggedVulkanMinimal = false;
+        if (!s_LoggedVulkanMinimal) {
+            LOG_WARN("[GameLayer] Vulkan 当前为最小可视化模式 (清屏)，2D Sprite 渲染待迁移");
+            s_LoggedVulkanMinimal = true;
+        }
+#endif
+        return;
+    }
+
     auto& window = Application::Get().GetWindow();
     u32 screenW = window.GetWidth();
     u32 screenH = window.GetHeight();

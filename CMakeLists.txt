@@ -48,6 +48,9 @@ target_link_libraries(imgui PUBLIC glfw glad)
 
 # ── 引擎库 ──────────────────────────────────────────────────
 
+option(ENGINE_ENABLE_VULKAN "启用 Vulkan 渲染后端" ON)
+message(STATUS "Vulkan 渲染后端默认已启用")
+
 add_subdirectory(engine)
 
 # ── 游戏框架库 (星露谷等游戏专属逻辑) ────────────────────────

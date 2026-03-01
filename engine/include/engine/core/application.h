@@ -2,6 +2,7 @@
 
 #include "engine/core/types.h"
 #include "engine/core/event.h"
+#include "engine/rhi/rhi_types.h"
 #include "engine/platform/window.h"
 
 #include <string>
@@ -45,6 +46,12 @@ struct ApplicationConfig {
     u32 Width  = 1280;
     u32 Height = 720;
     bool VSync = true;
+    GraphicsBackend Backend =
+#ifdef ENGINE_ENABLE_VULKAN
+        GraphicsBackend::Vulkan;
+#else
+        GraphicsBackend::OpenGL;
+#endif
 };
 
 // ── Application 类 ──────────────────────────────────────────
@@ -77,6 +84,7 @@ public:
     /// 窗口访问
     Window& GetWindow() { return m_Window; }
     const Window& GetWindow() const { return m_Window; }
+    GraphicsBackend GetBackend() const { return m_Backend; }
 
     /// 全局单例访问
     static Application& Get();
@@ -86,6 +94,12 @@ private:
     void ShutdownSubsystems();
 
     Window m_Window;
+    GraphicsBackend m_Backend =
+#ifdef ENGINE_ENABLE_VULKAN
+        GraphicsBackend::Vulkan;
+#else
+        GraphicsBackend::OpenGL;
+#endif
     std::vector<Scope<Layer>> m_Layers;
     bool m_Running = true;
 

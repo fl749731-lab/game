@@ -25,6 +25,7 @@ void Window::Init(const WindowConfig& config) {
     m_Width  = config.Width;
     m_Height = config.Height;
     m_VSync  = config.VSync;
+    m_Backend = config.Backend;
 
     LOG_INFO("创建窗口: %s (%u x %u)", m_Title.c_str(), m_Width, m_Height);
 
@@ -38,14 +39,18 @@ void Window::Init(const WindowConfig& config) {
         s_GLFWInitialized = true;
     }
 
-    // OpenGL 版本提示
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    if (m_Backend == GraphicsBackend::Vulkan) {
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    } else {
+        // OpenGL 版本提示
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
+        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
 #ifdef ENGINE_DEBUG
-    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
+        glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 #endif
+    }
 
     m_Window = glfwCreateWindow((int)m_Width, (int)m_Height, m_Title.c_str(), nullptr, nullptr);
     if (!m_Window) {
@@ -53,17 +58,21 @@ void Window::Init(const WindowConfig& config) {
         return;
     }
 
-    glfwMakeContextCurrent(m_Window);
+    if (m_Backend == GraphicsBackend::OpenGL) {
+        glfwMakeContextCurrent(m_Window);
 
-    // 加载 OpenGL 函数
-    int loaded = gladLoadGL((GLADloadproc)glfwGetProcAddress);
-    LOG_INFO("GLAD 加载了 %d 个 OpenGL 函数", loaded);
+        // 加载 OpenGL 函数
+        int loaded = gladLoadGL((GLADloadproc)glfwGetProcAddress);
+        LOG_INFO("GLAD 加载了 %d 个 OpenGL 函数", loaded);
 
-    LOG_INFO("OpenGL 信息:");
-    LOG_INFO("  供应商:   %s", glGetString(GL_VENDOR));
-    LOG_INFO("  渲染器:   %s", glGetString(GL_RENDERER));
-    LOG_INFO("  版本:     %s", glGetString(GL_VERSION));
-    LOG_INFO("  GLSL:     %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
+        LOG_INFO("OpenGL 信息:");
+        LOG_INFO("  供应商:   %s", glGetString(GL_VENDOR));
+        LOG_INFO("  渲染器:   %s", glGetString(GL_RENDERER));
+        LOG_INFO("  版本:     %s", glGetString(GL_VERSION));
+        LOG_INFO("  GLSL:     %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
+    } else {
+        LOG_INFO("窗口使用 Vulkan 模式 (GLFW_NO_API)");
+    }
 
     SetVSync(m_VSync);
 
@@ -73,7 +82,9 @@ void Window::Init(const WindowConfig& config) {
         auto* self = static_cast<Window*>(glfwGetWindowUserPointer(window));
         self->m_Width = width;
         self->m_Height = height;
-        glViewport(0, 0, width, height);
+        if (self->m_Backend == GraphicsBackend::OpenGL) {
+            glViewport(0, 0, width, height);
+        }
     });
 }
 
@@ -91,7 +102,9 @@ void Window::Shutdown() {
 
 void Window::Update() {
     glfwPollEvents();
-    glfwSwapBuffers(m_Window);
+    if (m_Backend == GraphicsBackend::OpenGL && m_Window) {
+        glfwSwapBuffers(m_Window);
+    }
 }
 
 bool Window::ShouldClose() const {
@@ -99,7 +112,9 @@ bool Window::ShouldClose() const {
 }
 
 void Window::SetVSync(bool enabled) {
-    glfwSwapInterval(enabled ? 1 : 0);
+    if (m_Backend == GraphicsBackend::OpenGL) {
+        glfwSwapInterval(enabled ? 1 : 0);
+    }
     m_VSync = enabled;
 }
 

@@ -26,7 +26,7 @@ C++ Engine
 ## 脚本生命周期
 
 | 回调 | 时机 | 签名 |
-|------|------|------|
+| ------ | ------ | ------ |
 | `on_create` | 首次执行 | `on_create(entity_id, ctx_json)` |
 | `on_update` | 每帧 | `on_update(entity_id, dt, ctx_json)` |
 | `on_event` | 事件触发 | `on_event(entity_id, event_json)` |
@@ -37,7 +37,7 @@ C++ Engine
 `engine_api.py` 提供 30+ 个 Python 函数调用 C++ 引擎功能：
 
 | 类别 | 函数示例 |
-|------|---------|
+| ------ | --------- |
 | Transform | `get_position` / `set_position` / `get_rotation` / `set_scale` |
 | Physics | `add_force` / `add_impulse` / `get_velocity` |
 | Entity | `spawn_entity` / `destroy_entity` / `find_by_tag` / `find_nearby` |
@@ -51,7 +51,7 @@ C++ Engine
 ### 逻辑脚本
 
 | 脚本 | 文件 | 用途 |
-|------|------|------|
+| ------ | ------ | ------ |
 | 游戏管理器 | `game_manager.py` | 游戏流程/波次/分数管理 |
 | 生成器 | `spawner.py` | 定时在周围生成新实体 |
 | 可拾取物品 | `collectible.py` | 浮动动画 + 自动拾取 + 效果触发 |
@@ -61,7 +61,7 @@ C++ Engine
 ### AI 脚本 — 基础
 
 | 脚本 | 文件 | 行为 |
-|------|------|------|
+| ------ | ------ | ------ |
 | 默认 AI | `default_ai.py` | 基础巡逻 + 追击逻辑 |
 | 攻击型 | `aggressive_ai.py` | 主动寻找并追击敌人 |
 | 防御型 | `defensive_ai.py` | 保持据点，受攻击才反击 |
@@ -69,7 +69,7 @@ C++ Engine
 ### AI 脚本 — 层级指挥链
 
 | 脚本 | 文件 | 角色 | 能力 |
-|------|------|------|------|
+| ------ | ------ | ------ | ------ |
 | 指挥官 AI | `commander_ai.py` | Commander | 玩家意图识别 (6种模式) + 长期记忆 + 战术矩阵 |
 | 小队长 AI | `squad_leader_ai.py` | Leader | 接收命令→分解子命令 + 阵型管理 (4种阵型) |
 | 智能士兵 AI | `smart_soldier_ai.py` | Soldier | 执行命令 + 阵型保持 + 集火协作 + 自我保护 |

@@ -1,4 +1,5 @@
 #include "engine/editor/editor.h"
+#include "engine/core/application.h"
 #include "engine/core/ecs.h"
 #include "engine/core/log.h"
 #include "engine/renderer/light.h"
@@ -13,8 +14,16 @@
 namespace Engine {
 
 bool Editor::s_Enabled = false;
+static bool s_EditorBackendReady = false;
 
 void Editor::Init(GLFWwindow* window) {
+    if (Application::Get().GetBackend() == GraphicsBackend::Vulkan) {
+        s_EditorBackendReady = false;
+        s_Enabled = false;
+        LOG_WARN("[Editor] Vulkan 模式下暂未接入 ImGui 渲染后端，编辑器已禁用");
+        return;
+    }
+
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
 
@@ -30,26 +39,29 @@ void Editor::Init(GLFWwindow* window) {
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 450");
+    s_EditorBackendReady = true;
 
     LOG_INFO("[Editor] ImGui 初始化完成");
 }
 
 void Editor::Shutdown() {
+    if (!s_EditorBackendReady) return;
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
+    s_EditorBackendReady = false;
     LOG_DEBUG("[Editor] 已清理");
 }
 
 void Editor::BeginFrame() {
-    if (!s_Enabled) return;
+    if (!s_Enabled || !s_EditorBackendReady) return;
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 }
 
 void Editor::Render(Scene& scene, Entity& selectedEntity) {
-    if (!s_Enabled) return;
+    if (!s_Enabled || !s_EditorBackendReady) return;
 
     DrawSceneHierarchy(scene, selectedEntity);
     DrawInspector(scene.GetWorld(), selectedEntity);
@@ -58,7 +70,7 @@ void Editor::Render(Scene& scene, Entity& selectedEntity) {
 }
 
 void Editor::EndFrame() {
-    if (!s_Enabled) return;
+    if (!s_Enabled || !s_EditorBackendReady) return;
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }

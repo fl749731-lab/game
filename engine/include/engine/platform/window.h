@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/types.h"
+#include "engine/rhi/rhi_types.h"
 #include <string>
 
 struct GLFWwindow;
@@ -14,6 +15,7 @@ struct WindowConfig {
     u32 Width  = 1280;
     u32 Height = 720;
     bool VSync = true;
+    GraphicsBackend Backend = GraphicsBackend::OpenGL;
 };
 
 // ── 窗口类 ──────────────────────────────────────────────────
@@ -33,6 +35,7 @@ public:
     u32 GetWidth() const { return m_Width; }
     u32 GetHeight() const { return m_Height; }
     GLFWwindow* GetNativeWindow() const { return m_Window; }
+    GraphicsBackend GetBackend() const { return m_Backend; }
 
     void SetVSync(bool enabled);
     bool IsVSync() const { return m_VSync; }
@@ -45,6 +48,7 @@ private:
     u32 m_Width = 0;
     u32 m_Height = 0;
     bool m_VSync = true;
+    GraphicsBackend m_Backend = GraphicsBackend::OpenGL;
 
     void Init(const WindowConfig& config);
     void Shutdown();
