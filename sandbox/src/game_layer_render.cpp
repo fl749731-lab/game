@@ -5,7 +5,10 @@
 
 #include "game_layer.h"
 #include "engine/core/application.h"
+#include "engine/renderer/vulkan/vulkan_context.h"
 #include "engine/renderer/sprite_batch.h"
+
+#include <glad/glad.h>
 
 #include <cmath>
 #include <algorithm>
