@@ -115,19 +115,34 @@ struct SceneChangedEvent : public Event {
     const char* GetName() const override { return "SceneChanged"; }
 };
 
+// ── 订阅 ID ─────────────────────────────────────────────────
+
+using SubscriptionID = u64;
+
 // ── 事件分发器 ──────────────────────────────────────────────
 
 class EventDispatcher {
 public:
     using HandlerFn = std::function<void(Event&)>;
 
-    /// 订阅某类型事件
+    /// 订阅某类型事件，返回可用于取消订阅的 ID
     template<typename T>
-    void Subscribe(std::function<void(T&)> handler) {
+    SubscriptionID Subscribe(std::function<void(T&)> handler) {
         auto typeIdx = std::type_index(typeid(T));
-        m_Handlers[typeIdx].push_back([handler](Event& e) {
+        SubscriptionID id = m_NextID++;
+        m_Handlers[typeIdx].push_back({id, [handler](Event& e) {
             handler(static_cast<T&>(e));
-        });
+        }});
+        return id;
+    }
+
+    /// 取消订阅 (按 ID)
+    void Unsubscribe(SubscriptionID id) {
+        for (auto& [type, entries] : m_Handlers) {
+            std::erase_if(entries, [id](const HandlerEntry& e) {
+                return e.ID == id;
+            });
+        }
     }
 
     /// 发布事件
@@ -136,18 +151,68 @@ public:
         auto typeIdx = std::type_index(typeid(T));
         auto it = m_Handlers.find(typeIdx);
         if (it != m_Handlers.end()) {
-            for (auto& fn : it->second) {
-                fn(event);
+            for (auto& entry : it->second) {
+                entry.Fn(event);
                 if (event.Handled) break;
             }
         }
     }
 
     /// 清除所有监听
-    void Clear() { m_Handlers.clear(); }
+    void Clear() { m_Handlers.clear(); m_NextID = 1; }
 
 private:
-    std::unordered_map<std::type_index, std::vector<HandlerFn>> m_Handlers;
+    struct HandlerEntry {
+        SubscriptionID ID;
+        HandlerFn      Fn;
+    };
+
+    SubscriptionID m_NextID = 1;
+    std::unordered_map<std::type_index, std::vector<HandlerEntry>> m_Handlers;
+};
+
+// ── RAII 订阅守卫 ───────────────────────────────────────────
+// 析构时自动取消订阅，防止悬垂回调
+
+class ScopedSubscription {
+public:
+    ScopedSubscription() = default;
+    ScopedSubscription(EventDispatcher& d, SubscriptionID id)
+        : m_Dispatcher(&d), m_ID(id) {}
+
+    ~ScopedSubscription() { Unsubscribe(); }
+
+    // 禁止拷贝
+    ScopedSubscription(const ScopedSubscription&) = delete;
+    ScopedSubscription& operator=(const ScopedSubscription&) = delete;
+
+    // 允许移动
+    ScopedSubscription(ScopedSubscription&& o) noexcept
+        : m_Dispatcher(o.m_Dispatcher), m_ID(o.m_ID) {
+        o.m_Dispatcher = nullptr;
+        o.m_ID = 0;
+    }
+    ScopedSubscription& operator=(ScopedSubscription&& o) noexcept {
+        Unsubscribe();
+        m_Dispatcher = o.m_Dispatcher;
+        m_ID = o.m_ID;
+        o.m_Dispatcher = nullptr;
+        o.m_ID = 0;
+        return *this;
+    }
+
+    void Unsubscribe() {
+        if (m_Dispatcher && m_ID != 0) {
+            m_Dispatcher->Unsubscribe(m_ID);
+            m_ID = 0;
+        }
+    }
+
+    SubscriptionID GetID() const { return m_ID; }
+
+private:
+    EventDispatcher* m_Dispatcher = nullptr;
+    SubscriptionID   m_ID = 0;
 };
 
 // ── 全局事件总线 ─────────────────────────────────────────────
@@ -160,9 +225,22 @@ public:
         return s_Instance;
     }
 
+    /// 订阅 (返回 ID，需手动或通过 ScopedSubscription 管理)
     template<typename T>
-    static void Subscribe(std::function<void(T&)> handler) {
-        Get().Subscribe<T>(handler);
+    static SubscriptionID Subscribe(std::function<void(T&)> handler) {
+        return Get().Subscribe<T>(handler);
+    }
+
+    /// 取消订阅
+    static void Unsubscribe(SubscriptionID id) {
+        Get().Unsubscribe(id);
+    }
+
+    /// 订阅并返回 RAII 守卫 (推荐用法)
+    template<typename T>
+    static ScopedSubscription ScopedSubscribe(std::function<void(T&)> handler) {
+        SubscriptionID id = Get().Subscribe<T>(handler);
+        return ScopedSubscription(Get(), id);
     }
 
     template<typename T>

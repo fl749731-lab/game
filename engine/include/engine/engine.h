@@ -10,6 +10,8 @@
 #include "engine/core/time.h"
 #include "engine/core/event.h"
 #include "engine/core/ecs.h"
+#include "engine/core/components.h"
+#include "engine/core/systems.h"
 #include "engine/core/resource_manager.h"
 #include "engine/core/scene.h"
 #include "engine/core/scene_serializer.h"
