@@ -136,12 +136,18 @@ public:
     /// 创建新实体 (自动附加 TagComponent — 需要 components.h 已包含)
     Entity CreateEntity(const std::string& name = "Entity");
 
-    /// 销毁实体
-    void DestroyEntity(Entity e) {
-        for (auto& [type, pool] : m_Pools) {
-            pool->Remove(e);
-        }
-        std::erase(m_Entities, e);
+    /// 销毁实体 (Generation 递增，ID 回收到 free list)
+    void DestroyEntity(Entity e);
+
+    /// 检查实体是否仍然存活 (防止悬垂引用)
+    bool IsAlive(Entity e) const {
+        return e < m_Generation.size() && m_Generation[e] > 0
+            && std::find(m_Entities.begin(), m_Entities.end(), e) != m_Entities.end();
+    }
+
+    /// 获取实体当前 Generation (0 = 从未使用或已销毁)
+    u32 GetGeneration(Entity e) const {
+        return (e < m_Generation.size()) ? m_Generation[e] : 0;
     }
 
     /// 添加组件
@@ -291,7 +297,9 @@ private:
     }
 
     Entity m_NextEntity = 1;
-    std::vector<Entity> m_Entities;
+    std::vector<Entity>  m_Entities;     // 当前存活实体列表
+    std::vector<u32>     m_Generation;   // 每个 index 的代数 (奇数=存活，偶数=已销毁)
+    std::vector<Entity>  m_FreeList;     // 可复用的已销毁实体 ID
     std::unordered_map<std::type_index, Scope<IComponentPool>> m_Pools;
     std::vector<Scope<System>> m_Systems;
 };
