@@ -4,6 +4,7 @@
 
 // Core
 #include "engine/core/types.h"
+#include "engine/core/engine_context.h"
 #include "engine/core/log.h"
 #include "engine/core/assert.h"
 #include "engine/core/gl_debug.h"

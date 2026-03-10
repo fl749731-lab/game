@@ -8,6 +8,7 @@ set(ENGINE_SOURCES
     src/core/application.cpp
     src/core/async_loader.cpp
     src/core/ecs.cpp
+    src/core/engine_context.cpp
     src/core/job_system.cpp
     src/core/log.cpp
     src/core/prefab.cpp
