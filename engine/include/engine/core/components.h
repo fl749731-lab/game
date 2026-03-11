@@ -4,8 +4,8 @@
 // 从 ecs.h 拆分出的独立组件头文件。
 // 每个组件都是纯数据结构 (POD-ish)，挂载到 Entity 上。
 
+#include "engine/core/ecs_types.h"
 #include "engine/core/types.h"
-#include "engine/core/ecs.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>

@@ -10,6 +10,7 @@
 #include "engine/core/gl_debug.h"
 #include "engine/core/time.h"
 #include "engine/core/event.h"
+#include "engine/core/ecs_types.h"
 #include "engine/core/ecs.h"
 #include "engine/core/components.h"
 #include "engine/core/systems.h"
@@ -23,6 +24,7 @@
 #include "engine/core/async_loader.h"
 #include "engine/core/application.h"
 #include "engine/core/allocator.h"
+#include "engine/core/random.h"
 
 // Platform
 #include "engine/platform/window.h"

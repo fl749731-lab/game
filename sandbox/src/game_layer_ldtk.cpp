@@ -137,8 +137,8 @@ void GameLayer::RenderLdtkMap() {
 
     glm::vec2 camCenter = m_CamCtrl.GetPosition();
     f32 zoom = m_CamCtrl.GetZoom();
-    f32 viewW = 20.0f / zoom;
-    f32 viewH = 15.0f / zoom;
+    f32 viewW = BASE_VIEW_WIDTH / zoom;
+    f32 viewH = BASE_VIEW_HEIGHT / zoom;
     glm::vec2 camPos = camCenter - glm::vec2(viewW * 0.5f, viewH * 0.5f);
 
     auto& window = Application::Get().GetWindow();

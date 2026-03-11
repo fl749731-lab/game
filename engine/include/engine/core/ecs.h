@@ -1,9 +1,11 @@
 #pragma once
 
 // ── ECS 核心 ────────────────────────────────────────────────
-// 纯 ECS 容器: Entity、Component、ComponentArray<T>、System、ECSWorld
+// 纯 ECS 容器: ComponentArray<T>、System、ECSWorld
+// 基础类型 (Entity, Component) 见 ecs_types.h
 // 组件定义见 components.h，内置系统见 systems.h
 
+#include "engine/core/ecs_types.h"
 #include "engine/core/types.h"
 #include "engine/core/job_system.h"
 #include <vector>
@@ -18,17 +20,6 @@ namespace Engine {
 
 // ── 前向声明 ────────────────────────────────────────────────
 class ECSWorld;
-
-// ── Entity —— 只是一个 ID ───────────────────────────────────
-
-using Entity = u32;
-constexpr Entity INVALID_ENTITY = ~Entity(0);  // UINT32_MAX
-
-// ── Component 基类 ──────────────────────────────────────────
-
-struct Component {
-    virtual ~Component() = default;
-};
 
 // ── IComponentPool —— 类型擦除的组件池基类 ──────────────────
 
@@ -140,9 +131,9 @@ public:
     void DestroyEntity(Entity e);
 
     /// 检查实体是否仍然存活 (防止悬垂引用)
+    /// 使用 Generation 奇偶判断: 奇数=存活, 偶数=已销毁/未使用 — O(1)
     bool IsAlive(Entity e) const {
-        return e < m_Generation.size() && m_Generation[e] > 0
-            && std::find(m_Entities.begin(), m_Entities.end(), e) != m_Entities.end();
+        return e < m_Generation.size() && (m_Generation[e] & 1u) != 0;
     }
 
     /// 获取实体当前 Generation (0 = 从未使用或已销毁)
@@ -305,9 +296,4 @@ private:
 };
 
 } // namespace Engine
-
-// ── 向后兼容 — 包含拆分出的组件和系统定义 ───────────────────
-// 现有代码只 #include "ecs.h" 即可获得完整功能
-#include "engine/core/components.h"
-#include "engine/core/systems.h"
 

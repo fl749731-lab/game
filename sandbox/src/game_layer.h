@@ -13,6 +13,19 @@
 
 namespace Engine {
 
+// ── 2D 相机视口常量 ─────────────────────────────────────────
+constexpr f32 BASE_VIEW_WIDTH  = 20.0f;
+constexpr f32 BASE_VIEW_HEIGHT = 15.0f;
+
+// ── 视口计算辅助结构体 ──────────────────────────────────────
+struct CameraViewport {
+    glm::vec2 CamPos;      // 左下角世界坐标
+    f32 ViewW, ViewH;      // 世界单位的可见宽高
+    f32 ScreenW, ScreenH;  // 屏幕像素宽高
+    f32 TileScreenW;       // 1 个世界单位 = 多少像素 (X)
+    f32 TileScreenH;       // 1 个世界单位 = 多少像素 (Y)
+};
+
 class GameLayer : public Layer {
 public:
     const char* GetName() const override { return "ZombieSurvival"; }
@@ -98,8 +111,12 @@ private:
     // Tile 颜色映射 (TileID → 颜色) — 纹理加载失败时回退
     static glm::vec4 GetTileColor(u16 tileID);
 
+    // ── 视口辅助 ────────────────────────────────────────
+    CameraViewport GetViewport() const;
+
     // ── LDtk 地图 ──────────────────────────────────────
     bool m_UseLdtk = false;
+    u32  m_LastDay  = 0;    // 上次记录的天数 (替代 static 局部变量)
     LdtkProject m_LdtkProject;
     std::unordered_map<std::string, Ref<Texture2D>> m_LdtkTilesets;
     bool LoadLdtkMap(const std::string& path);

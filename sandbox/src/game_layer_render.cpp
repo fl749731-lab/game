@@ -86,25 +86,18 @@ void GameLayer::RenderTilemap() {
     }
 
     auto& tilemap = m_GameMap.GetTilemap();
-    glm::vec2 camCenter = m_CamCtrl.GetPosition();
-    f32 zoom = m_CamCtrl.GetZoom();
-    f32 viewW = 20.0f / zoom;
-    f32 viewH = 15.0f / zoom;
-
-    // 将中心坐标转换为左下角坐标
-    glm::vec2 camPos = camCenter - glm::vec2(viewW * 0.5f, viewH * 0.5f);
+    auto vp = GetViewport();
 
     // 可见范围 (裁剪)
-    i32 startX = std::max(0, (i32)std::floor(camPos.x));
-    i32 startY = std::max(0, (i32)std::floor(camPos.y));
-    i32 endX = std::min((i32)tilemap.GetWidth(), (i32)std::ceil(camPos.x + viewW) + 1);
-    i32 endY = std::min((i32)tilemap.GetHeight(), (i32)std::ceil(camPos.y + viewH) + 1);
+    i32 startX = std::max(0, (i32)std::floor(vp.CamPos.x));
+    i32 startY = std::max(0, (i32)std::floor(vp.CamPos.y));
+    i32 endX = std::min((i32)tilemap.GetWidth(), (i32)std::ceil(vp.CamPos.x + vp.ViewW) + 1);
+    i32 endY = std::min((i32)tilemap.GetHeight(), (i32)std::ceil(vp.CamPos.y + vp.ViewH) + 1);
 
-    auto& window = Application::Get().GetWindow();
-    f32 screenW = (f32)window.GetWidth();
-    f32 screenH = (f32)window.GetHeight();
-    f32 tileScreenW = screenW / viewW;
-    f32 tileScreenH = screenH / viewH;
+    f32 tileScreenW = vp.TileScreenW;
+    f32 tileScreenH = vp.TileScreenH;
+    f32 screenH = vp.ScreenH;
+    glm::vec2 camPos = vp.CamPos;
 
     // ── 地面层 — Autotile 渲染 ──────────────────────────────
     i32 mapW = (i32)tilemap.GetWidth();
@@ -217,16 +210,12 @@ void GameLayer::RenderTilemap() {
 
 void GameLayer::RenderEntities() {
     auto& world = m_Scene->GetWorld();
-    glm::vec2 camCenter = m_CamCtrl.GetPosition();
-    f32 zoom = m_CamCtrl.GetZoom();
-    f32 viewW = 20.0f / zoom;
-    f32 viewH = 15.0f / zoom;
-    glm::vec2 camPos = camCenter - glm::vec2(viewW * 0.5f, viewH * 0.5f);
-    auto& window = Application::Get().GetWindow();
-    f32 screenW = (f32)window.GetWidth();
-    f32 screenH = (f32)window.GetHeight();
-    f32 tileScreenW = screenW / viewW;
-    f32 tileScreenH = screenH / viewH;
+    auto vp = GetViewport();
+    glm::vec2 camPos = vp.CamPos;
+    f32 screenW = vp.ScreenW;
+    f32 screenH = vp.ScreenH;
+    f32 tileScreenW = vp.TileScreenW;
+    f32 tileScreenH = vp.TileScreenH;
 
     // 渲染建筑
     world.ForEach<BuildableComponent>([&](Entity e, BuildableComponent& bld) {
@@ -403,16 +392,12 @@ void GameLayer::RenderEntities() {
 // ── 建造预览 ────────────────────────────────────────────────
 
 void GameLayer::RenderBuildPreview() {
-    glm::vec2 camCenter = m_CamCtrl.GetPosition();
-    f32 zoom = m_CamCtrl.GetZoom();
-    f32 viewW = 20.0f / zoom;
-    f32 viewH = 15.0f / zoom;
-    glm::vec2 camPos = camCenter - glm::vec2(viewW * 0.5f, viewH * 0.5f);
-    auto& window = Application::Get().GetWindow();
-    f32 screenW = (f32)window.GetWidth();
-    f32 screenH = (f32)window.GetHeight();
-    f32 tileScreenW = screenW / viewW;
-    f32 tileScreenH = screenH / viewH;
+    auto vp = GetViewport();
+    glm::vec2 camPos = vp.CamPos;
+    f32 screenW = vp.ScreenW;
+    f32 screenH = vp.ScreenH;
+    f32 tileScreenW = vp.TileScreenW;
+    f32 tileScreenH = vp.TileScreenH;
 
     glm::vec2 pos = m_BuildingSys->GetPreviewPosition();
     auto preset = GetBuildingPreset(m_BuildingSys->GetBuildType());

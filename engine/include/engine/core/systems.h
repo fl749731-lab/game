@@ -11,11 +11,14 @@ namespace Engine {
 
 // ── 运动系统 ────────────────────────────────────────────────
 /// 根据速度更新位置（SoA 直接遍历）
+/// @warning 并行更新前提条件:
+///   - 并行期间不得添加/删除 TransformComponent 或 VelocityComponent
+///   - 并行期间不得创建/销毁实体
+///   这些条件在 ECSWorld::Update() 顺序调用 System 时天然满足。
 
 class MovementSystem : public System {
 public:
     void Update(ECSWorld& world, f32 dt) override {
-        // 并行更新：每个实体只写自己的 Transform，线程安全
         auto& pool = world.GetComponentArray<VelocityComponent>();
         u32 count = pool.Size();
         JobSystem::ParallelFor(0u, count, [&](u32 i) {

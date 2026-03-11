@@ -1,5 +1,6 @@
 #include "game_layer.h"
 #include "engine/core/application.h"
+#include "engine/core/random.h"
 #include "engine/renderer/vulkan/vulkan_context.h"
 #include "engine/renderer/sprite_batch.h"
 #include "engine/platform/input.h"
@@ -12,6 +13,24 @@
 #include <algorithm>
 
 namespace Engine {
+
+// ── 视口计算辅助 — 消除所有重复的相机坐标计算 ───────────
+
+CameraViewport GameLayer::GetViewport() const {
+    CameraViewport vp;
+    glm::vec2 center = m_CamCtrl.GetPosition();
+    f32 zoom = m_CamCtrl.GetZoom();
+    vp.ViewW = BASE_VIEW_WIDTH / zoom;
+    vp.ViewH = BASE_VIEW_HEIGHT / zoom;
+    vp.CamPos = center - glm::vec2(vp.ViewW * 0.5f, vp.ViewH * 0.5f);
+
+    auto& window = Application::Get().GetWindow();
+    vp.ScreenW = (f32)window.GetWidth();
+    vp.ScreenH = (f32)window.GetHeight();
+    vp.TileScreenW = vp.ScreenW / vp.ViewW;
+    vp.TileScreenH = vp.ScreenH / vp.ViewH;
+    return vp;
+}
 
 // ══════════════════════════════════════════════════════════════
 //  初始化 / 清理
@@ -69,7 +88,7 @@ void GameLayer::OnAttach() {
     SetupLootPoints();
 
     // ── 相机 ─────────────────────────────────────────────
-    m_CamCtrl = Camera2DController(20.0f, 15.0f);
+    m_CamCtrl = Camera2DController(BASE_VIEW_WIDTH, BASE_VIEW_HEIGHT);
     m_CamCtrl.SetSmoothness(6.0f);
     m_CamCtrl.SetWorldBounds({0,0},
         {(f32)m_GameMap.GetWidth(), (f32)m_GameMap.GetHeight()});
@@ -287,7 +306,7 @@ void GameLayer::OnUpdate(f32 dt) {
     // 检查玩家死亡
     if (m_CombatSys->IsDead(m_Scene->GetWorld(), m_Player)) {
         m_GameOver = true;
-        LOG_INFO("[GameLayer] 游戏结束! 存活 {} 天, 击杀 {} 只丧尸",
+        LOG_INFO("[GameLayer] 游戏结束! 存活 %u 天, 击杀 %u 只丧尸",
                   m_DayCount, m_KillCount);
     }
 
@@ -353,7 +372,7 @@ void GameLayer::HandleInput(f32 dt) {
         m_CombatSys->MeleeAttack(world, m_Player);
     }
 
-    // ── 搜刮 / 交互 (E) ─────────────────────────────────
+    // ── 搜刮 / 拾取 (E) ─────────────────────────────────
     if (Input::IsKeyJustPressed(Key::E)) {
         glm::vec2 playerPos = {ptr->X, ptr->Y};
         world.ForEach<LootableComponent>([&](Entity e, LootableComponent& loot) {
@@ -377,8 +396,10 @@ void GameLayer::HandleInput(f32 dt) {
 
         // 拾取地面掉落物
         m_CombatSys->PickupLoot(world, m_Player);
+    }
 
-        // 使用食物 (如果手持食物)
+    // ── 使用食物/医疗物品 (F) ─────────────────────────────
+    if (Input::IsKeyJustPressed(Key::F)) {
         auto* inv = world.GetComponent<InventoryComponent>(m_Player);
         if (inv) {
             auto& selected = inv->GetSelectedItem();
@@ -400,6 +421,7 @@ void GameLayer::HandleInput(f32 dt) {
                         surv->Thirst = std::min(surv->MaxThirst, surv->Thirst + 40.0f);
                     }
                     inv->RemoveItem(selected.ItemID, 1);
+                    LOG_INFO("[GameLayer] 使用物品: %s", def->Name.c_str());
                 }
             }
         }
@@ -440,19 +462,11 @@ void GameLayer::HandleBuildInput(f32 dt) {
         }
 
         // 计算鼠标对应的世界坐标
-        auto& window = Application::Get().GetWindow();
         f32 mx = Input::GetMouseX();
         f32 my = Input::GetMouseY();
-        f32 screenW = (f32)window.GetWidth();
-        f32 screenH = (f32)window.GetHeight();
-
-        glm::vec2 camPos = m_CamCtrl.GetPosition();
-        f32 zoom = m_CamCtrl.GetZoom();
-        f32 viewW = 20.0f / zoom;
-        f32 viewH = 15.0f / zoom;
-
-        f32 worldX = camPos.x + (mx / screenW) * viewW;
-        f32 worldY = camPos.y + (1.0f - my / screenH) * viewH;
+        auto vp = GetViewport();
+        f32 worldX = vp.CamPos.x + (mx / vp.ScreenW) * vp.ViewW;
+        f32 worldY = vp.CamPos.y + (1.0f - my / vp.ScreenH) * vp.ViewH;
 
         // 对齐到 0.5 格
         worldX = std::floor(worldX * 2.0f) / 2.0f + 0.25f;
@@ -540,26 +554,25 @@ void GameLayer::UpdateZombieSpawning(f32 dt) {
             auto& pos = spawns[i % spawns.size()];
             // 随机丧尸类型
             ZombieType type = ZombieType::Walker;
-            u32 roll = std::rand() % 100;
+            u32 roll = Random::UInt(100);
             if (roll < 10 && m_DayCount >= 3) type = ZombieType::Tank;
             else if (roll < 35) type = ZombieType::Runner;
 
             // 在刷新点附近随机偏移
             glm::vec2 spawnPos = pos;
-            spawnPos.x += (std::rand() % 40 - 20) * 0.1f;
-            spawnPos.y += (std::rand() % 40 - 20) * 0.1f;
+            spawnPos.x += Random::Float(-2.0f, 2.0f);
+            spawnPos.y += Random::Float(-2.0f, 2.0f);
 
             m_ZombieSys->SpawnZombie(world, spawnPos, type);
         }
 
-        LOG_INFO("[GameLayer] 第 {} 波丧尸! 数量: {}", m_Spawner.GetWaveNumber(), count);
+        LOG_INFO("[GameLayer] 第 %u 波丧尸! 数量: %u", m_Spawner.GetWaveNumber(), count);
     }
 
     // 日计数
-    static u32 lastDay = 0;
-    if (m_TimeSys->GetDay() != lastDay) {
-        lastDay = m_TimeSys->GetDay();
-        m_DayCount = lastDay;
+    if (m_TimeSys->GetDay() != m_LastDay) {
+        m_LastDay = m_TimeSys->GetDay();
+        m_DayCount = m_LastDay;
     }
 }
 
@@ -579,7 +592,7 @@ void GameLayer::CleanupDeadZombies() {
         auto* zombie = world.GetComponent<ZombieComponent>(e);
         if (tr) {
             // 掉落资源
-            u32 roll = std::rand() % 100;
+            u32 roll = Random::UInt(100);
             if (roll < 40) m_CombatSys->SpawnLoot(world, {tr->X, tr->Y}, 1, 2);  // 木材
             if (roll < 20) m_CombatSys->SpawnLoot(world, {tr->X, tr->Y}, 10, 1); // 罐头
             if (roll < 10) m_CombatSys->SpawnLoot(world, {tr->X, tr->Y}, 3, 1);  // 铁片
