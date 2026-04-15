@@ -195,15 +195,15 @@ void GameLayer::SetupPlayer() {
     hp.Current = 100.0f;
 
     auto& player = world.AddComponent<PlayerComponent>(m_Player);
-    player.MoveSpeed = 4.0f;
-    player.MaxStamina = 100.0f;
-    player.Stamina = 100.0f;
+    player.m_moveSpeed = 4.0f;
+    player.m_maxStamina = 100.0f;
+    player.m_stamina = 100.0f;
 
     auto& combat = world.AddComponent<CombatComponent>(m_Player);
-    combat.AttackDamage = 15.0f;
-    combat.AttackRange = 1.5f;
-    combat.AttackCooldown = 0.4f;
-    combat.KnockbackForce = 4.0f;
+    combat.m_attackDamage = 15.0f;
+    combat.m_attackRange = 1.5f;
+    combat.m_attackCooldown = 0.4f;
+    combat.m_knockbackForce = 4.0f;
 
     auto& survival = world.AddComponent<SurvivalComponent>(m_Player);
     survival.Hunger = 100.0f;
@@ -286,7 +286,7 @@ void GameLayer::OnUpdate(f32 dt) {
                 if (!zTr) return;
 
                 f32 zRadius = zombieRadius;
-                if (zombie.Type == ZombieType::Tank) zRadius = 0.55f;
+                if (zombie.m_type == ZombieType::Tank) zRadius = 0.55f;
 
                 glm::vec2 push = Collision2D::CirclePush(
                     {playerTr->X, playerTr->Y}, playerRadius,
@@ -325,17 +325,17 @@ void GameLayer::HandleInput(f32 dt) {
 
     // ── 移动 (WASD) ─────────────────────────────────────
     glm::vec2 moveDir = {0, 0};
-    if (Input::IsKeyDown(Key::W)) { moveDir.y += 1; player->Facing = Direction::Up; }
-    if (Input::IsKeyDown(Key::S)) { moveDir.y -= 1; player->Facing = Direction::Down; }
-    if (Input::IsKeyDown(Key::A)) { moveDir.x -= 1; player->Facing = Direction::Left; }
-    if (Input::IsKeyDown(Key::D)) { moveDir.x += 1; player->Facing = Direction::Right; }
+    if (Input::IsKeyDown(Key::W)) { moveDir.y += 1; player->m_facing = Direction::Up; }
+    if (Input::IsKeyDown(Key::S)) { moveDir.y -= 1; player->m_facing = Direction::Down; }
+    if (Input::IsKeyDown(Key::A)) { moveDir.x -= 1; player->m_facing = Direction::Left; }
+    if (Input::IsKeyDown(Key::D)) { moveDir.x += 1; player->m_facing = Direction::Right; }
 
     if (moveDir.x != 0 || moveDir.y != 0) {
         f32 len = std::sqrt(moveDir.x * moveDir.x + moveDir.y * moveDir.y);
         moveDir /= len;
 
-        f32 newX = ptr->X + moveDir.x * player->MoveSpeed * dt;
-        f32 newY = ptr->Y + moveDir.y * player->MoveSpeed * dt;
+        f32 newX = ptr->X + moveDir.x * player->m_moveSpeed * dt;
+        f32 newY = ptr->Y + moveDir.y * player->m_moveSpeed * dt;
 
         // 分轴 AABB 碰撞检测 (贴墙可滑动)
         auto& tilemap = m_GameMap.GetTilemap();
@@ -345,11 +345,11 @@ void GameLayer::HandleInput(f32 dt) {
         ptr->X = resolved.x;
         ptr->Y = resolved.y;
 
-        player->IsMoving = true;
+        player->m_isMoving = true;
         // 更新朝向角度 (给战斗系统用)
         ptr->RotZ = std::atan2(moveDir.y, moveDir.x);
     } else {
-        player->IsMoving = false;
+        player->m_isMoving = false;
     }
 
     // ── 鼠标朝向 ─────────────────────────────────────────

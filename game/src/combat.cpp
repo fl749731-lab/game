@@ -9,10 +9,14 @@ namespace Engine {
 void CombatSystem::Update(ECSWorld& world, f32 dt) {
     // 更新攻击冷却
     world.ForEach<CombatComponent>([&](Entity e, CombatComponent& combat) {
-        if (combat.CooldownTimer > 0) combat.CooldownTimer -= dt;
-        if (combat.IsAttacking) {
-            combat.AttackTimer -= dt;
-            if (combat.AttackTimer <= 0) combat.IsAttacking = false;
+        if (combat.m_cooldownTimer > 0.0f) {
+            combat.m_cooldownTimer -= dt;
+        }
+        if (combat.m_isAttacking) {
+            combat.m_attackTimer -= dt;
+            if (combat.m_attackTimer <= 0.0f) {
+                combat.m_isAttacking = false;
+            }
         }
     });
 
@@ -21,19 +25,19 @@ void CombatSystem::Update(ECSWorld& world, f32 dt) {
         auto* tr = world.GetComponent<TransformComponent>(e);
         if (!tr) return;
 
-        tr->X += proj.Direction.x * proj.Speed * dt;
-        tr->Y += proj.Direction.y * proj.Speed * dt;
+        tr->X += proj.m_direction.x * proj.m_speed * dt;
+        tr->Y += proj.m_direction.y * proj.m_speed * dt;
 
-        proj.Lifetime -= dt;
-        if (proj.Lifetime <= 0) {
+        proj.m_lifetime -= dt;
+        if (proj.m_lifetime <= 0.0f) {
             world.DestroyEntity(e);
         }
     });
 
     // 更新掉落物生命周期
     world.ForEach<LootDropComponent>([&](Entity e, LootDropComponent& loot) {
-        loot.Lifetime -= dt;
-        if (loot.Lifetime <= 0) {
+        loot.m_lifetime -= dt;
+        if (loot.m_lifetime <= 0.0f) {
             world.DestroyEntity(e);
         }
     });
@@ -41,43 +45,43 @@ void CombatSystem::Update(ECSWorld& world, f32 dt) {
 
 void CombatSystem::MeleeAttack(ECSWorld& world, Entity attacker) {
     auto* combat = world.GetComponent<CombatComponent>(attacker);
-    if (!combat || combat->CooldownTimer > 0) return;
+    if (!combat || combat.m_cooldownTimer > 0.0f) return;
 
     auto* tr = world.GetComponent<TransformComponent>(attacker);
     if (!tr) return;
 
-    combat->IsAttacking = true;
-    combat->AttackTimer = combat->AttackDuration;
-    combat->CooldownTimer = combat->AttackCooldown;
+    combat.m_isAttacking = true;
+    combat.m_attackTimer = combat.m_attackDuration;
+    combat.m_cooldownTimer = combat.m_attackCooldown;
 
-    glm::vec2 attackerPos = {tr->X, tr->Y};
+    const glm::vec2 attackerPos = {tr->X, tr->Y};
 
-    // 对范围内敌方实体造成伤害
     // 攻击方向基于玩家朝向 (RotationZ 表示朝向角度)
-    f32 attackAngle = tr->RotZ;
-    glm::vec2 attackDir = {std::cos(attackAngle), std::sin(attackAngle)};
+    const f32 attackAngle = glm::radians(tr->RotZ);
+    const glm::vec2 attackDir = {std::cos(attackAngle), std::sin(attackAngle)};
 
     world.ForEach<HealthComponent>([&](Entity target, HealthComponent& hp) {
         if (target == attacker) return;
+        
         auto* ttr = world.GetComponent<TransformComponent>(target);
         if (!ttr) return;
 
-        glm::vec2 targetPos = {ttr->X, ttr->Y};
-        glm::vec2 diff = targetPos - attackerPos;
-        f32 dist = std::sqrt(diff.x * diff.x + diff.y * diff.y);
+        const glm::vec2 targetPos = {ttr->X, ttr->Y};
+        const glm::vec2 diff = targetPos - attackerPos;
+        const f32 dist = std::hypot(diff.x, diff.y);
 
-        if (dist > combat->AttackRange) return;
+        if (dist > combat.m_attackRange) return;
 
-        // 检查是否在攻击方向的 120° 扇形内
-        if (dist > 0.01f) {
-            glm::vec2 dirToTarget = diff / dist;
-            f32 dot = attackDir.x * dirToTarget.x + attackDir.y * dirToTarget.y;
-            if (dot < -0.5f) return;  // cos(120°) = -0.5, 在背后就不打
+        // 检查是否在攻击方向的扇形内
+        if (dist > k_minAttackDist) {
+            const glm::vec2 dirToTarget = diff / dist;
+            const f32 dot = glm::dot(attackDir, dirToTarget);
+            if (dot < k_cosAttackAngle) return;  // 在背后就不打
         }
 
-        DealDamage(world, target, combat->AttackDamage,
-                   dist > 0.01f ? diff / dist : glm::vec2{0,0},
-                   combat->KnockbackForce);
+        DealDamage(world, target, combat.m_attackDamage,
+                   dist > k_minAttackDist ? diff / dist : glm::vec2{0,0},
+                   combat.m_knockbackForce);
     });
 }
 
@@ -88,25 +92,24 @@ void CombatSystem::DealDamage(ECSWorld& world, Entity target, f32 damage,
 
     // 减去防御
     auto* combat = world.GetComponent<CombatComponent>(target);
-    f32 actualDamage = damage;
-    if (combat) actualDamage = std::max(1.0f, damage - combat->Defense);
+    f32 actualDamage = combat ? std::max(k_minDamage, damage - combat.m_defense) : damage;
 
     hp->Current -= actualDamage;
-    if (hp->Current < 0) hp->Current = 0;
+    if (hp->Current < 0.0f) hp->Current = 0.0f;
 
     // 击退
-    if (knockForce > 0 && (knockDir.x != 0 || knockDir.y != 0)) {
+    if (knockForce > 0.0f && (knockDir.x != 0.0f || knockDir.y != 0.0f)) {
         auto* tr = world.GetComponent<TransformComponent>(target);
         if (tr) {
-            tr->X += knockDir.x * knockForce * 0.1f;
-            tr->Y += knockDir.y * knockForce * 0.1f;
+            tr->X += knockDir.x * knockForce * k_knockbackMult;
+            tr->Y += knockDir.y * knockForce * k_knockbackMult;
         }
     }
 }
 
 bool CombatSystem::IsDead(ECSWorld& world, Entity e) const {
     auto* hp = world.GetComponent<HealthComponent>(e);
-    return hp && hp->Current <= 0;
+    return hp && hp->Current <= 0.0f;
 }
 
 void CombatSystem::SpawnLoot(ECSWorld& world, const glm::vec2& pos,
@@ -115,41 +118,40 @@ void CombatSystem::SpawnLoot(ECSWorld& world, const glm::vec2& pos,
     auto& tr = world.AddComponent<TransformComponent>(e);
     tr.X = pos.x;
     tr.Y = pos.y;
-    tr.ScaleX = tr.ScaleY = tr.ScaleZ = 0.4f;
+    tr.SetScale(0.4f);
 
     auto& loot = world.AddComponent<LootDropComponent>(e);
-    loot.ItemID = itemID;
-    loot.Count = count;
+    loot.m_itemID = itemID;
+    loot.m_count = count;
 }
 
 void CombatSystem::PickupLoot(ECSWorld& world, Entity player) {
     auto* ptr = world.GetComponent<TransformComponent>(player);
     if (!ptr) return;
-    glm::vec2 playerPos = {ptr->X, ptr->Y};
+    
+    const glm::vec2 playerPos = {ptr->X, ptr->Y};
 
     // 临时收集需要销毁的实体
     std::vector<Entity> toDestroy;
+    toDestroy.reserve(8);  // 预分配小缓冲区
 
     world.ForEach<LootDropComponent>([&](Entity e, LootDropComponent& loot) {
         auto* ltr = world.GetComponent<TransformComponent>(e);
         if (!ltr) return;
 
-        glm::vec2 lootPos = {ltr->X, ltr->Y};
-        f32 dx = lootPos.x - playerPos.x;
-        f32 dy = lootPos.y - playerPos.y;
-        f32 dist = std::sqrt(dx * dx + dy * dy);
+        const glm::vec2 lootPos = {ltr->X, ltr->Y};
+        const f32 dist = std::hypot(lootPos.x - playerPos.x, lootPos.y - playerPos.y);
 
-        if (dist <= loot.PickupRange) {
+        if (dist <= loot.m_pickupRange) {
             // 尝试添加到背包
-            auto* inv = world.GetComponent<InventoryComponent>(player);
-            if (inv) {
-                inv->AddItem(loot.ItemID, loot.Count);
+            if (auto* inv = world.GetComponent<InventoryComponent>(player)) {
+                inv->AddItem(loot.m_itemID, loot.m_count);
             }
             toDestroy.push_back(e);
         }
     });
 
-    for (auto e : toDestroy) {
+    for (const auto e : toDestroy) {
         world.DestroyEntity(e);
     }
 }

@@ -20,135 +20,130 @@ void ZombieSystem::UpdateZombieAI(ECSWorld& world, Entity e,
                                    ZombieComponent& zombie, f32 dt) {
     auto* tr = world.GetComponent<TransformComponent>(e);
     auto* hp = world.GetComponent<HealthComponent>(e);
-    if (!tr || !hp || hp->Current <= 0) return;
+    if (!tr || !hp || hp->Current <= 0.0f) return;
 
-    glm::vec2 zombiePos = {tr->X, tr->Y};
+    const glm::vec2 zombiePos = {tr->X, tr->Y};
     glm::vec2 playerPos = {0, 0};
-    f32 distToPlayer = 9999.0f;
+    f32 distToPlayer = k_noPathDistThreshold;
 
     // 获取玩家位置
-    if (m_Player != INVALID_ENTITY) {
-        auto* ptr = world.GetComponent<TransformComponent>(m_Player);
-        if (ptr) {
+    if (m_player != INVALID_ENTITY) {
+        if (auto* ptr = world.GetComponent<TransformComponent>(m_player)) {
             playerPos = {ptr->X, ptr->Y};
-            f32 dx = playerPos.x - zombiePos.x;
-            f32 dy = playerPos.y - zombiePos.y;
-            distToPlayer = std::sqrt(dx * dx + dy * dy);
+            distToPlayer = std::hypot(playerPos.x - zombiePos.x, 
+                                      playerPos.y - zombiePos.y);
         }
     }
 
     // 更新攻击冷却
-    if (zombie.CooldownTimer > 0) zombie.CooldownTimer -= dt;
+    if (zombie.m_cooldownTimer > 0.0f) {
+        zombie.m_cooldownTimer -= dt;
+    }
 
     // ── AI 决策 ──────────────────────────────────────────
 
     // 1) 仇恨检测
-    if (!zombie.IsAggro && distToPlayer < zombie.AggroRange) {
-        zombie.IsAggro = true;
-        zombie.Target = m_Player;
+    if (!zombie.m_isAggro && distToPlayer < zombie.m_aggroRange) {
+        zombie.m_isAggro = true;
+        zombie.m_target = m_player;
     }
-    if (zombie.IsAggro && distToPlayer > zombie.DeaggroRange) {
-        zombie.IsAggro = false;
-        zombie.Target = INVALID_ENTITY;
-        zombie.Path.clear();
+    if (zombie.m_isAggro && distToPlayer > zombie.m_deaggroRange) {
+        zombie.m_isAggro = false;
+        zombie.m_target = INVALID_ENTITY;
+        zombie.m_path.clear();
     }
 
-    if (zombie.IsAggro && zombie.Target != INVALID_ENTITY) {
+    if (zombie.m_isAggro && zombie.m_target != INVALID_ENTITY) {
         // 2) 在攻击范围内 → 攻击
-        if (distToPlayer <= zombie.AttackRange) {
-            if (zombie.CooldownTimer <= 0) {
-                zombie.CooldownTimer = zombie.AttackCooldown;
+        if (distToPlayer <= zombie.m_attackRange) {
+            if (zombie.m_cooldownTimer <= 0.0f) {
+                zombie.m_cooldownTimer = zombie.m_attackCooldown;
                 // 对玩家造成伤害
-                auto* playerHP = world.GetComponent<HealthComponent>(m_Player);
-                if (playerHP) {
-                    playerHP->Current -= zombie.AttackDamage;
-                    if (playerHP->Current < 0) playerHP->Current = 0;
+                if (auto* playerHP = world.GetComponent<HealthComponent>(m_player)) {
+                    playerHP->Current -= zombie.m_attackDamage;
+                    if (playerHP->Current < 0.0f) playerHP->Current = 0.0f;
                 }
             }
             return;  // 攻击时不移动
         }
 
         // 3) A* 寻路追击
-        zombie.PathRefreshTimer -= dt;
-        if (zombie.PathRefreshTimer <= 0 && m_NavGrid) {
-            zombie.PathRefreshTimer = zombie.PathRefreshRate;
-            glm::vec3 start = {zombiePos.x, zombiePos.y, 0};
-            glm::vec3 goal  = {playerPos.x, playerPos.y, 0};
-            zombie.Path = m_NavGrid->FindPath(start, goal);
-            zombie.PathIndex = 0;
+        zombie.m_pathRefreshTimer -= dt;
+        if (zombie.m_pathRefreshTimer <= 0.0f && m_navGrid) {
+            zombie.m_pathRefreshTimer = zombie.m_pathRefreshRate;
+            const glm::vec3 start = {zombiePos.x, zombiePos.y, 0};
+            const glm::vec3 goal  = {playerPos.x, playerPos.y, 0};
+            zombie.m_path = m_navGrid->FindPath(start, goal);
+            zombie.m_pathIndex = 0;
         }
 
         // 沿路径移动
-        if (!zombie.Path.empty() && zombie.PathIndex < zombie.Path.size()) {
-            glm::vec2 target2d = {zombie.Path[zombie.PathIndex].x,
-                                   zombie.Path[zombie.PathIndex].y};
-            glm::vec2 diff = target2d - zombiePos;
-            f32 dist = std::sqrt(diff.x * diff.x + diff.y * diff.y);
+        if (!zombie.m_path.empty() && zombie.m_pathIndex < zombie.m_path.size()) {
+            const glm::vec2 target2d = {zombie.m_path[zombie.m_pathIndex].x,
+                                       zombie.m_path[zombie.m_pathIndex].y};
+            const glm::vec2 diff = target2d - zombiePos;
+            const f32 dist = std::hypot(diff.x, diff.y);
 
-            if (dist < 0.3f) {
-                zombie.PathIndex++;
+            if (dist < k_pathNodeReachedDist) {
+                zombie.m_pathIndex++;
             } else {
-                glm::vec2 dir = diff / dist;
-                tr->X += dir.x * zombie.MoveSpeed * dt;
-                tr->Y += dir.y * zombie.MoveSpeed * dt;
-                // 朝向
-                tr->RotZ = std::atan2(dir.y, dir.x);
+                const glm::vec2 dir = diff / dist;
+                tr->X += dir.x * zombie.m_moveSpeed * dt;
+                tr->Y += dir.y * zombie.m_moveSpeed * dt;
+                tr->RotZ = glm::degrees(std::atan2(dir.y, dir.x));
             }
         } else {
             // 无路径，直接朝玩家移动
-            if (distToPlayer > 0.1f) {
-                glm::vec2 diff = playerPos - zombiePos;
-                glm::vec2 dir = diff / distToPlayer;
-                tr->X += dir.x * zombie.MoveSpeed * dt;
-                tr->Y += dir.y * zombie.MoveSpeed * dt;
-                tr->RotZ = std::atan2(dir.y, dir.x);
+            if (distToPlayer > k_minMoveDist) {
+                const glm::vec2 diff = playerPos - zombiePos;
+                const glm::vec2 dir = diff / distToPlayer;
+                tr->X += dir.x * zombie.m_moveSpeed * dt;
+                tr->Y += dir.y * zombie.m_moveSpeed * dt;
+                tr->RotZ = glm::degrees(std::atan2(dir.y, dir.x));
             }
         }
     } else {
         // 4) 游荡
-        zombie.WanderTimer -= dt;
-        if (zombie.WanderTimer <= 0) {
-            zombie.WanderTimer = 2.0f + (std::rand() % 30) * 0.1f;
-            f32 angle = (std::rand() % 360) * 3.14159f / 180.0f;
-            zombie.WanderDir = {std::cos(angle), std::sin(angle)};
+        zombie.m_wanderTimer -= dt;
+        if (zombie.m_wanderTimer <= 0.0f) {
+            zombie.m_wanderTimer = k_wanderTimerMin + 
+                                   static_cast<f32>(std::rand() % 30) * 0.1f;
+            const f32 angle = static_cast<f32>(std::rand() % 360) * 
+                              glm::pi<f32>() / 180.0f;
+            zombie.m_wanderDir = {std::cos(angle), std::sin(angle)};
         }
 
-        f32 wanderSpeed = zombie.MoveSpeed * 0.3f;
-        tr->X += zombie.WanderDir.x * wanderSpeed * dt;
-        tr->Y += zombie.WanderDir.y * wanderSpeed * dt;
-        tr->RotZ = std::atan2(zombie.WanderDir.y, zombie.WanderDir.x);
+        const f32 wanderSpeed = zombie.m_moveSpeed * k_wanderSpeedMult;
+        tr->X += zombie.m_wanderDir.x * wanderSpeed * dt;
+        tr->Y += zombie.m_wanderDir.y * wanderSpeed * dt;
+        tr->RotZ = glm::degrees(std::atan2(zombie.m_wanderDir.y, zombie.m_wanderDir.x));
     }
 }
 
 Entity ZombieSystem::SpawnZombie(ECSWorld& world, const glm::vec2& pos,
                                   ZombieType type) {
-    auto preset = GetZombiePreset(type);
-    std::string name;
-    switch (type) {
-        case ZombieType::Walker: name = "Zombie_Walker"; break;
-        case ZombieType::Runner: name = "Zombie_Runner"; break;
-        case ZombieType::Tank:   name = "Zombie_Tank";   break;
-    }
+    const auto& preset = GetZombiePreset(type);
+    const char* name = GetZombieTypeName(type);
 
     Entity e = world.CreateEntity(name);
 
     auto& tr = world.AddComponent<TransformComponent>(e);
     tr.X = pos.x;
     tr.Y = pos.y;
-    tr.ScaleX = tr.ScaleY = tr.ScaleZ = preset.Scale;
+    tr.SetScale(preset.m_scale);
 
     auto& hp = world.AddComponent<HealthComponent>(e);
-    hp.Current = preset.Health;
-    hp.Max = preset.Health;
+    hp.Current = preset.m_health;
+    hp.Max = preset.m_health;
 
     auto& zombie = world.AddComponent<ZombieComponent>(e);
-    zombie.Type           = type;
-    zombie.MoveSpeed      = preset.MoveSpeed;
-    zombie.AttackDamage   = preset.AttackDamage;
-    zombie.AttackRange    = preset.AttackRange;
-    zombie.AggroRange     = preset.AggroRange;
-    zombie.BuildingDamage = preset.BuildingDamage;
-    zombie.XPReward       = preset.XPReward;
+    zombie.m_type           = type;
+    zombie.m_moveSpeed      = preset.m_moveSpeed;
+    zombie.m_attackDamage   = preset.m_attackDamage;
+    zombie.m_attackRange    = preset.m_attackRange;
+    zombie.m_aggroRange     = preset.m_aggroRange;
+    zombie.m_buildingDamage = preset.m_buildingDamage;
+    zombie.m_xpReward       = preset.m_xpReward;
 
     return e;
 }
@@ -159,27 +154,28 @@ Entity ZombieSystem::SpawnZombie(ECSWorld& world, const glm::vec2& pos,
 
 void ZombieSpawner::Update(f32 dt, bool isNight, u32 dayCount) {
     // 日夜切换检测
-    if (isNight && !m_WasNight) {
+    if (isNight && !m_wasNight) {
         // 刚进入夜晚 → 立即触发第一波
-        m_WasNight = true;
-        m_WaveNumber = 0;
-        m_WaveTimer = 0;
-        m_SpawnCount = 3 + dayCount * 2;  // 每天增加2只基础量
-        m_SpawnPending = true;
-        m_WaveNumber++;
+        m_wasNight = true;
+        m_waveNumber = 0;
+        m_waveTimer = 0.0f;
+        m_spawnCount = k_baseSpawnCount + dayCount * k_spawnIncreasePerDay;
+        m_spawnPending = true;
+        m_waveNumber++;
     }
-    if (!isNight && m_WasNight) {
-        m_WasNight = false;
+    if (!isNight && m_wasNight) {
+        m_wasNight = false;
     }
 
     // 夜间持续刷新
     if (isNight) {
-        m_WaveTimer += dt;
-        if (m_WaveTimer >= m_WaveInterval) {
-            m_WaveTimer = 0;
-            m_WaveNumber++;
-            m_SpawnCount = (3 + dayCount * 2) + m_WaveNumber * 2;
-            m_SpawnPending = true;
+        m_waveTimer += dt;
+        if (m_waveTimer >= m_waveInterval) {
+            m_waveTimer = 0.0f;
+            m_waveNumber++;
+            m_spawnCount = (k_baseSpawnCount + dayCount * k_spawnIncreasePerDay) + 
+                           m_waveNumber * k_spawnIncreasePerWave;
+            m_spawnPending = true;
         }
     }
 }

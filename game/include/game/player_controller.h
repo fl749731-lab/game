@@ -17,6 +17,8 @@ enum class Direction : u8 {
     Up,
     Left,
     Right,
+
+    Count  // 用于数组大小
 };
 
 // ── 工具类型 ──────────────────────────────────────────────
@@ -30,32 +32,36 @@ enum class ToolType : u8 {
     Scythe,     // 镰刀 — 割草/收割
     FishingRod, // 钓竿
     Seed,       // 种子 (当前持有)
+
+    Count  // 用于数组大小
 };
 
 // ── 玩家组件 ──────────────────────────────────────────────
 
 struct PlayerComponent : public Component {
-    f32       MoveSpeed = 3.5f;        // Tile/秒
-    Direction Facing    = Direction::Down;
-    ToolType  CurrentTool = ToolType::None;
+    f32       m_moveSpeed = 3.5f;        // Tile/秒
+    Direction m_facing    = Direction::Down;
+    ToolType  m_currentTool = ToolType::None;
 
-    bool IsMoving    = false;
-    bool IsUsingTool = false;
-    f32  ToolTimer   = 0.0f;           // 工具使用动画计时
-    f32  ToolCooldown = 0.3f;          // 使用间隔
+    bool m_isMoving    = false;
+    bool m_isUsingTool = false;
+    f32  m_toolTimer   = 0.0f;           // 工具使用动画计时
+    f32  m_toolCooldown = 0.3f;          // 使用间隔
 
-    f32  Stamina     = 100.0f;
-    f32  MaxStamina  = 100.0f;
+    f32  m_stamina     = 100.0f;
+    f32  m_maxStamina  = 100.0f;
 
     /// 获取面前一格的 Tile 偏移
-    glm::ivec2 GetFacingOffset() const {
-        switch (Facing) {
-            case Direction::Up:    return { 0,  1};
-            case Direction::Down:  return { 0, -1};
-            case Direction::Left:  return {-1,  0};
-            case Direction::Right: return { 1,  0};
-        }
-        return {0, 0};
+    [[nodiscard]] glm::ivec2 GetFacingOffset() const {
+        static constexpr glm::ivec2 s_offsets[] = {
+            { 0, -1},  // Down
+            { 0,  1},  // Up
+            {-1,  0},  // Left
+            { 1,  0}   // Right
+        };
+        static_assert(sizeof(s_offsets) / sizeof(s_offsets[0]) == static_cast<size_t>(Direction::Count),
+                      "Direction enum and offset array mismatch");
+        return s_offsets[static_cast<size_t>(m_facing)];
     }
 };
 
@@ -64,7 +70,22 @@ struct PlayerComponent : public Component {
 class PlayerControlSystem : public System {
 public:
     void Update(ECSWorld& world, f32 dt) override;
-    const char* GetName() const override { return "PlayerControlSystem"; }
+    [[nodiscard]] const char* GetName() const override { return "PlayerControlSystem"; }
+
+private:
+    // 动画名称映射表：索引 [Direction][IsMoving]
+    // Direction: Down, Up, Left, Right
+    // IsMoving: 0=idle, 1=walk
+    static constexpr const char* s_animationNames[4][2] = {
+        {"idle_down",  "walk_down" },   // Down
+        {"idle_up",    "walk_up"   },   // Up
+        {"idle_left",  "walk_left" },   // Left
+        {"idle_right", "walk_right"}    // Right
+    };
+
+    static constexpr size_t GetDirectionIndex(Direction dir) {
+        return static_cast<size_t>(dir);
+    }
 };
 
 } // namespace Engine
